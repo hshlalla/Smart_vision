@@ -1,0 +1,10 @@
+{
+    "maker": "PSK",
+    "model": "DAS2000",
+    "process": "PR Strip",
+    "config": null,
+    "serial": "PDK04013",
+    "code": "M7EPR205",
+    "wafer_size": 8,
+    "vintage": 2004
+}

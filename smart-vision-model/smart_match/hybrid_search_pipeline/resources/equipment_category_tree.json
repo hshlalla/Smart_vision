@@ -1,0 +1,146 @@
+{
+    "name": "ROOT",
+    "children": [
+        {
+            "name": "FAB",
+            "children": [
+                {
+                    "name": "Asher"
+                },
+                {
+                    "name": "CMP"
+                },
+                {
+                    "name": "CVD"
+                },
+                {
+                    "name": "ECD"
+                },
+                {
+                    "name": "Etch"
+                },
+                {
+                    "name": "Furnace"
+                },
+                {
+                    "name": "Implant"
+                },
+                {
+                    "name": "Metrology"
+                },
+                {
+                    "name": "PVD"
+                },
+                {
+                    "name": "RTP"
+                },
+                {
+                    "name": "Stepper"
+                },
+                {
+                    "name": "Scanner"
+                },
+                {
+                    "name": "Track"
+                },
+                {
+                    "name": "WET"
+                },
+                {
+                    "name": "MoCVD"
+                },
+                {
+                    "name": "Fab Others"
+                }
+            ]
+        },
+        {
+            "name": "ATE",
+            "children": [
+                {
+                    "name": "Prober"
+                },
+                {
+                    "name": "Handler"
+                },
+                {
+                    "name": "Tester"
+                },
+                {
+                    "name": "ATE ETC"
+                }
+            ]
+        },
+        {
+            "name": "PKG",
+            "children": [
+                {
+                    "name": "Dicing Saw"
+                },
+                {
+                    "name": "Wire Bonder"
+                },
+                {
+                    "name": "Die Bonder"
+                },
+                {
+                    "name": "Back Grinder"
+                },
+                {
+                    "name": "PKG ETC"
+                }
+            ]
+        },
+        {
+            "name": "SMT",
+            "children": [
+                {
+                    "name": "Chip Mounter"
+                },
+                {
+                    "name": "Printer&Dispenser"
+                },
+                {
+                    "name": "Reflow&Soldering"
+                },
+                {
+                    "name": "Inspection"
+                },
+                {
+                    "name": "Auto Inserter"
+                },
+                {
+                    "name": "SMT ETC"
+                }
+            ]
+        },
+        {
+            "name": "DISPLAY",
+            "children": [
+                {
+                    "name": "LCD"
+                },
+                {
+                    "name": "Display"
+                }
+            ]
+        },
+        {
+            "name": "OTHER_INDUSTRY",
+            "children": [
+                {
+                    "name": "Solar"
+                },
+                {
+                    "name": "General Tester"
+                },
+                {
+                    "name": "PCB Equip"
+                },
+                {
+                    "name": "Microscope"
+                }
+            ]
+        }
+    ]
+}

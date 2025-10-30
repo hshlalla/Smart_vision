@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=80.3.1", "wheel>=0.45.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smart-match-model"
+version = "1.0.0"
+description = "Machine learning models for Smart Vision platform"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+authors = [
+    {name = "SurplusGLOBAL AI Team"}
+]
+dependencies = [
+    "PyYAML>=6.0.2",
+    "anytree>=2.13.0",
+    "imbalanced-learn>=0.13.0",
+    "lightning>=2.5.1",
+    "openpyxl>=3.1.5",
+    "pandas>=2.2.3",
+    "safetensors>=0.5.3",
+    "scikit-learn>=1.6.1",
+    "torch>=2.7.0",
+    "transformers>=4.51.3",
+    "paddleocr[doc-parser]>=2.9.1",
+    "paddlepaddle-gpu==2.6.1",
+    "pymilvus>=2.4.9",
+    "Pillow>=11.0.0",
+    "huggingface-hub>=0.26.2"
+]
+
+[project.optional-dependencies]
+dev = [
+    "black>=25.1.0",
+    "flake8>=7.2.0",
+    "pytest>=8.3.5"
+]
+
+[tool.setuptools.package-data]
+smart_match = ["*.json"]
+
+[tool.setuptools.packages.find]
+include = ["smart_match*"]
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
