@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import logging
 
@@ -39,6 +39,8 @@ class OCRToken:
 class OCRExecutionResult:
     tokens: List[OCRToken]
     combined_text: str
+    markdown_text: Optional[str] = None
+    markdown_images: Optional[List[Tuple[str, Image.Image]]] = None
 
 
 class PaddleOCRVLPipeline:
@@ -47,7 +49,7 @@ class PaddleOCRVLPipeline:
     def __init__(
         self,
         *,
-        score_threshold: float = 0.9,
+        score_threshold: float = 0.5,
         **pipeline_kwargs,
     ) -> None:
         self._score_threshold = score_threshold
@@ -73,9 +75,17 @@ class PaddleOCRVLPipeline:
     def _extract_from_vl(self, ocr_outputs) -> OCRExecutionResult:
         filtered_tokens: List[OCRToken] = []
         combined_text_parts: List[str] = []
+        markdown_pages = []
+        markdown_images: List[Tuple[str, Image.Image]] = []
 
         for doc in ocr_outputs:
             doc_dict = self._to_dict(doc)
+            markdown = doc_dict.get("markdown")
+            if markdown:
+                markdown_pages.append(markdown)
+                for path, image_obj in markdown.get("markdown_images", {}).items():
+                    markdown_images.append((path, image_obj))
+
             for page in doc_dict.get("pages", []):
                 for line in page.get("lines", []):
                     text = line.get("text", "")
@@ -87,8 +97,34 @@ class PaddleOCRVLPipeline:
                     filtered_tokens.append(OCRToken(text=text, score=score, box=box))
                     combined_text_parts.append(text)
 
+        markdown_text = None
+        if markdown_pages:
+            markdown_text = self._concatenate_markdown_pages(markdown_pages)
+
         combined_text = " ".join(combined_text_parts).strip()
-        return OCRExecutionResult(tokens=filtered_tokens, combined_text=combined_text)
+        return OCRExecutionResult(
+            tokens=filtered_tokens,
+            combined_text=combined_text,
+            markdown_text=markdown_text,
+            markdown_images=markdown_images or None,
+        )
+
+    def _concatenate_markdown_pages(self, markdown_pages: List[dict]) -> Optional[str]:
+        """Safely concatenate markdown pages when PaddleOCR-VL exposes the helper."""
+        if hasattr(self._pipeline, "concatenate_markdown_pages"):
+            try:
+                return self._pipeline.concatenate_markdown_pages(markdown_pages)
+            except Exception:  # pragma: no cover - optional path
+                return None
+
+        parts = []
+        for page in markdown_pages:
+            text = page.get("markdown_text")
+            if text:
+                parts.append(text)
+        if parts:
+            return "\n\n".join(parts)
+        return None
 
     def _extract_from_std(self, ocr_outputs) -> OCRExecutionResult:
         filtered_tokens: List[OCRToken] = []

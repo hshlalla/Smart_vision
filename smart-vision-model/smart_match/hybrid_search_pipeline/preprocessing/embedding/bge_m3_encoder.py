@@ -23,6 +23,8 @@ class BGEM3TextEncoder:
         torch_dtype: Optional[torch.dtype] = torch.float16,
         trust_remote_code: bool = True,
         embedding_dim: int = 1024,
+        document_instruction: str = "Represent this document for retrieval:",
+        query_instruction: str = "Represent this query for retrieving relevant documents:",
     ) -> None:
         self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self._dtype = torch_dtype
@@ -34,15 +36,20 @@ class BGEM3TextEncoder:
             torch_dtype=self._dtype,
         ).to(self._device)
         self._model.eval()
+        self._doc_instruction = document_instruction.strip() if document_instruction else ""
+        self._query_instruction = query_instruction.strip() if query_instruction else ""
 
     def encode(self, text: str, *, instruction: Optional[str] = None) -> torch.Tensor:
-        """Return a normalized embedding for the provided text."""
-        return self.encode_batch([text], instruction=instruction)[0]
+        """Return a normalized embedding for the provided text (document-style by default)."""
+        resolved_instruction = instruction
+        if resolved_instruction is None and self._doc_instruction:
+            resolved_instruction = self._doc_instruction
+        return self.encode_batch([text], instruction=resolved_instruction)[0]
 
     def encode_batch(self, texts: Iterable[str], *, instruction: Optional[str] = None) -> List[torch.Tensor]:
         """Batch encode multiple texts, returning CPU tensor embeddings."""
-        prefix = instruction or ""
-        queries = [f"{prefix}{text}" if prefix else text for text in texts]
+        prefix = (instruction or "").strip()
+        queries = [f"{prefix} {text}" if prefix else text for text in texts]
         inputs = self._tokenizer(
             queries,
             padding=True,
@@ -61,6 +68,16 @@ class BGEM3TextEncoder:
             sentence_embeddings = torch.nn.functional.normalize(sentence_embeddings, p=2, dim=-1)
 
         return [emb.detach().cpu() for emb in sentence_embeddings]
+
+    def encode_document(self, text: str) -> torch.Tensor:
+        """Encode a document/passage using the configured document instruction."""
+        instruction = self._doc_instruction or None
+        return self.encode(text, instruction=instruction)
+
+    def encode_query(self, text: str) -> torch.Tensor:
+        """Encode a query using the configured query instruction."""
+        instruction = self._query_instruction or None
+        return self.encode(text, instruction=instruction)
 
 
 __all__ = ["BGEM3TextEncoder"]

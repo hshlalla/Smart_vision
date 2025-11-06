@@ -27,6 +27,7 @@ class FusionWeights:
 
     alpha: float
     beta: float
+    gamma: float = 0.0
 
 
 class HybridFusionRetriever:
@@ -36,11 +37,23 @@ class HybridFusionRetriever:
         self._cross_encoder = cross_encoder
         self._weights = weights
 
-    def fuse_scores(self, img_scores, txt_scores) -> np.ndarray:
-        """Compute fusion score using alpha·cos(img) + beta·cos(txt)."""
+    @property
+    def weights(self) -> FusionWeights:
+        return self._weights
+
+    def fuse_scores(self, img_scores, ocr_scores, caption_scores=None) -> np.ndarray:
+        """Compute fusion score using alpha·image + beta·ocr (+ gamma·caption when provided)."""
         img_scores = np.asarray(img_scores, dtype=np.float32)
-        txt_scores = np.asarray(txt_scores, dtype=np.float32)
-        return self._weights.alpha * img_scores + self._weights.beta * txt_scores
+        ocr_scores = np.asarray(ocr_scores, dtype=np.float32)
+        combined = self._weights.alpha * img_scores + self._weights.beta * ocr_scores
+        weight_sum = self._weights.alpha + self._weights.beta
+        if caption_scores is not None:
+            caption_scores = np.asarray(caption_scores, dtype=np.float32)
+            combined += self._weights.gamma * caption_scores
+            weight_sum += self._weights.gamma
+        if weight_sum <= 0.0:
+            return combined
+        return combined / weight_sum
 
     def rerank(self, query: dict, candidates: List[dict]) -> List[dict]:
         """Rerank candidates using the configured cross encoder."""

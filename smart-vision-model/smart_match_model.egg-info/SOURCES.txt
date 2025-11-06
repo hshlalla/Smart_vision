@@ -4,8 +4,10 @@ pyproject.toml
 smart_match/__init__.py
 smart_match/hybrid_search_pipeline/hybrid_pipeline_runner.py
 smart_match/hybrid_search_pipeline/data_collection/mobile_capture_pipeline.py
+smart_match/hybrid_search_pipeline/data_collection/tracker_dataset.py
 smart_match/hybrid_search_pipeline/preprocessing/metadata_normalizer.py
 smart_match/hybrid_search_pipeline/preprocessing/pipeline.py
+smart_match/hybrid_search_pipeline/preprocessing/captioning/qwen3_captioner.py
 smart_match/hybrid_search_pipeline/preprocessing/embedding/bge_m3_encoder.py
 smart_match/hybrid_search_pipeline/preprocessing/embedding/bge_vl_encoder.py
 smart_match/hybrid_search_pipeline/preprocessing/image_classification/classifier.py
@@ -13,6 +15,8 @@ smart_match/hybrid_search_pipeline/preprocessing/object_detection/yolo_detector.
 smart_match/hybrid_search_pipeline/preprocessing/ocr/OCR.py
 smart_match/hybrid_search_pipeline/retrieval/milvus_hybrid_index.py
 smart_match/hybrid_search_pipeline/search/fusion_retriever.py
+smart_match/scripts/__init__.py
+smart_match/scripts/index_tracker_incremental.py
 smart_match_model.egg-info/PKG-INFO
 smart_match_model.egg-info/SOURCES.txt
 smart_match_model.egg-info/dependency_links.txt

@@ -23,6 +23,8 @@ class MetadataNormalizer:
             normalized["model_id"] = str(metadata.get("model_id", "")).strip()
         if "pk" in metadata:
             normalized["pk"] = str(metadata.get("pk", "")).strip()
+        if "description" in metadata and metadata["description"] is not None:
+            normalized["description"] = str(metadata.get("description", "")).strip()
         return normalized
 
     @staticmethod

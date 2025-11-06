@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import gradio as gr
 from gradio import networking as gradio_networking
@@ -48,9 +48,10 @@ def index_asset(
     maker: str,
     part_number: str,
     category: str,
+    description: str,
 ) -> str:
     if not images:
-        return "이미지를 업로드해주세요."
+        images = []
 
     model_id = (model_id or "").strip()
     if not model_id:
@@ -62,7 +63,17 @@ def index_asset(
         "maker": maker,
         "part_number": part_number,
         "category": category,
+        "description": description,
     }
+
+    try:
+        ORCHESTRATOR.index_model_metadata(model_id, metadata)
+        results.append("✅ 메타데이터가 등록되었습니다.")
+    except Exception as exc:  # pragma: no cover - demo utility
+        return f"❌ 메타데이터 등록 실패: {exc}"
+
+    if not images:
+        return "\n".join(results)
 
     for idx, file_obj in enumerate(images, start=1):
         tmp_path = None
@@ -82,7 +93,6 @@ def index_asset(
             with Image.open(file_path) as img:
                 tmp_path = _dump_temp_image(img)
             item_metadata = dict(metadata)
-            item_metadata["pk"] = f"{model_id}::img_{idx:03d}"
             ORCHESTRATOR.preprocess_and_index(tmp_path, item_metadata)
             results.append(f"✅ {Path(file_path).name} 인덱싱 완료")
         except Exception as exc:  # pragma: no cover - demo utility
@@ -95,12 +105,53 @@ def index_asset(
     return "\n".join(results)
 
 
+def index_assets_bulk(entries: List[Dict[str, Any]]) -> str:
+    if not entries:
+        return "등록할 항목이 없습니다."
+    try:
+        summary = ORCHESTRATOR.bulk_index(entries)
+    except Exception as exc:  # pragma: no cover - demo utility
+        return f"❌ 일괄 인덱싱 실패: {exc}"
+
+    messages: List[str] = []
+    indexed = summary.get("indexed") or []
+    errors = summary.get("errors") or []
+    if indexed:
+        messages.append(f"✅ 등록 완료: {', '.join(indexed)}")
+    if errors:
+        messages.append("❌ 실패:\n" + "\n".join(errors))
+    return "\n".join(messages) if messages else "처리된 항목이 없습니다."
+
+
+def index_tracker_model(model_id: str) -> str:
+    cleaned = (model_id or "").strip()
+    if not cleaned:
+        return "Model ID를 입력해주세요."
+    try:
+        summary = ORCHESTRATOR.index_tracker_model(cleaned)
+    except KeyError:
+        return f"❌ Tracker 데이터에서 모델을 찾을 수 없습니다: {cleaned}"
+    except FileNotFoundError as exc:  # pragma: no cover - demo utility
+        return f"❌ 이미지 또는 데이터셋을 찾을 수 없습니다: {exc}"
+    except Exception as exc:  # pragma: no cover - demo utility
+        return f"❌ 인덱싱 실패: {exc}"
+
+    messages: List[str] = []
+    indexed = summary.get("indexed") or []
+    errors = summary.get("errors") or []
+    if indexed:
+        messages.append(f"✅ 등록 완료: {', '.join(indexed)}")
+    if errors:
+        messages.append("❌ 실패:\n" + "\n".join(errors))
+    return "\n".join(messages) if messages else f"{cleaned}: 처리 결과가 없습니다."
+
+
 def run_search(
     query_image: Image.Image,
     query_text: str,
     part_number: str,
     top_k: int,
-) -> List[Dict[str, object]]:
+) -> tuple[List[Dict[str, object]], List[str]]:
     image_path = None
     if query_image is not None:
         image_path = _dump_temp_image(query_image)
@@ -112,12 +163,65 @@ def run_search(
             top_k=top_k,
             part_number=part_number or None,
         )
-        return results
+        gallery_images: List[str] = []
+        for result in results:
+            images = result.get("images", []) if isinstance(result, dict) else []
+            valid_paths = [img.get("image_path") for img in images if img.get("image_path")]
+            if valid_paths:
+                gallery_images = valid_paths[:9]
+                break
+        return results, gallery_images
     except Exception as exc:  # pragma: no cover - demo utility
-        return [{"error": str(exc)}]
+        return ([{"error": str(exc)}], [])
     finally:
         if image_path:
             image_path.unlink(missing_ok=True)
+
+
+def run_ocr_preview(image: Image.Image) -> Dict[str, object]:
+    if image is None:
+        return {"error": "이미지를 업로드해주세요."}
+
+    tmp_path = _dump_temp_image(image)
+    try:
+        ocr_output = ORCHESTRATOR.ocr_engine.extract(str(tmp_path))
+        tokens = [
+            {
+                "text": getattr(token, "text", str(token)),
+                "score": getattr(token, "score", None),
+            }
+            for token in ocr_output.tokens
+        ]
+        preview = {
+            "combined_text": ocr_output.combined_text if hasattr(ocr_output, "combined_text") else " ".join(
+                t["text"] for t in tokens
+            ),
+            "tokens": tokens,
+        }
+        if getattr(ocr_output, "markdown_text", None):
+            preview["markdown_text"] = ocr_output.markdown_text
+        if getattr(ocr_output, "markdown_images", None):
+            preview["markdown_image_paths"] = [path for path, _ in ocr_output.markdown_images]
+        return preview
+    except Exception as exc:  # pragma: no cover - demo utility
+        return {"error": str(exc)}
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+def run_ocr_markdown(image: Image.Image):
+    if image is None:
+        return "이미지를 업로드해주세요."
+    tmp_path = _dump_temp_image(image)
+    try:
+        ocr_output = ORCHESTRATOR.ocr_engine.extract(str(tmp_path))
+        if getattr(ocr_output, "markdown_text", None):
+            return ocr_output.markdown_text
+        return "❌ Markdown 정보를 생성할 수 없습니다."
+    except Exception as exc:  # pragma: no cover - demo utility
+        return f"❌ 오류: {exc}"
+    finally:
+        tmp_path.unlink(missing_ok=True)
 
 
 def list_collections() -> Dict[str, Dict[str, object]]:
@@ -158,12 +262,13 @@ with gr.Blocks(title="Smart Vision Hybrid Demo") as demo:
                 maker = gr.Textbox(label="Maker", value="")
                 part_number = gr.Textbox(label="Part Number", value="")
                 category = gr.Textbox(label="Category", value="")
+                description = gr.Textbox(label="Description", value="", lines=3)
                 index_button = gr.Button("인덱싱 실행")
             with gr.Column():
                 index_output = gr.Markdown()
         index_button.click(
             index_asset,
-            inputs=[upload_images, model_id, maker, part_number, category],
+            inputs=[upload_images, model_id, maker, part_number, category, description],
             outputs=index_output,
         )
 
@@ -177,10 +282,37 @@ with gr.Blocks(title="Smart Vision Hybrid Demo") as demo:
                 search_button = gr.Button("검색")
             with gr.Column():
                 search_results = gr.JSON(label="검색 결과")
+                search_gallery = gr.Gallery(label="이미지 미리보기", columns=3, height=400)
         search_button.click(
             run_search,
             inputs=[search_image, query_text, search_part_number, top_k],
-            outputs=search_results,
+            outputs=[search_results, search_gallery],
+        )
+
+    with gr.Tab("ocr_preview"):
+        with gr.Row():
+            with gr.Column():
+                ocr_image = gr.Image(type="pil", label="OCR 이미지")
+                ocr_button = gr.Button("PaddleOCR 실행")
+            with gr.Column():
+                ocr_output = gr.JSON(label="OCR 결과")
+        ocr_button.click(
+            run_ocr_preview,
+            inputs=ocr_image,
+            outputs=ocr_output,
+        )
+
+    with gr.Tab("ocr_markdown"):
+        with gr.Row():
+            with gr.Column():
+                ocr_markdown_image = gr.Image(type="pil", label="OCR 이미지")
+                ocr_markdown_button = gr.Button("Markdown 생성")
+            with gr.Column():
+                ocr_markdown_view = gr.Markdown()
+        ocr_markdown_button.click(
+            run_ocr_markdown,
+            inputs=ocr_markdown_image,
+            outputs=ocr_markdown_view,
         )
 
     with gr.Tab("Milvus Status"):
@@ -232,11 +364,18 @@ gradio_client_utils._json_schema_to_python_type = _safe_json_schema_to_python_ty
 
 if __name__ == "__main__":
     share = os.getenv("GRADIO_SHARE", "false").lower() == "true"
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    media_candidates = {
+        os.path.abspath(os.path.join(os.getcwd(), "media")),
+        os.path.abspath(os.path.join(repo_root, "media")),
+    }
+    allowed_media_paths = [path for path in media_candidates if os.path.isdir(path)]
     demo.launch(
         server_name="0.0.0.0",
-        server_port=7860,
+        server_port=7861,
         share=share,
         show_api=False,
         inbrowser=False,
         prevent_thread_lock=False,
+        allowed_paths=allowed_media_paths or None,
     )

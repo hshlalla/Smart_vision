@@ -35,7 +35,7 @@ class HybridSearchService:
         logger.info("Initializing HybridSearchOrchestrator for API service...")
         self._orchestrator = HybridSearchOrchestrator(
             milvus=MilvusConnectionConfig(uri=settings.MILVUS_URI),
-            fusion_weights=FusionWeights(alpha=0.6, beta=0.4),
+            fusion_weights=FusionWeights(alpha=0.5, beta=0.3, gamma=0.2),
         )
         logger.info("HybridSearchOrchestrator ready.")
 
@@ -62,6 +62,13 @@ class HybridSearchService:
             tmp_path.unlink(missing_ok=True)
 
         return {"status": "indexed"}
+
+    def index_model_metadata(self, metadata: Dict[str, str]) -> Dict[str, str]:
+        model_id = str(metadata.get("model_id", "")).strip()
+        if not model_id:
+            raise ValueError("metadata must include 'model_id'.")
+        self._orchestrator.index_model_metadata(model_id, metadata)
+        return {"status": "registered"}
 
     def search(
         self,

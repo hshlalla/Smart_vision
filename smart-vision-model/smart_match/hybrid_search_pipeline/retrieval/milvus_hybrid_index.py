@@ -10,9 +10,16 @@ Defines the three Milvus collections that store dense vectors and structured att
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence
 
 from pymilvus import Collection, CollectionSchema, DataType, FieldSchema, utility
+
+
+@dataclass
+class FieldSpec:
+    name: str
+    dtype: DataType
+    max_length: Optional[int] = None
 
 
 @dataclass
@@ -25,6 +32,7 @@ class CollectionConfig:
     index_type: str = "HNSW"
     ef_construction: int = 200
     M: int = 16
+    extra_fields: Sequence[FieldSpec] = ()
     pk_max_length: int = 256
 
 
@@ -40,6 +48,11 @@ def build_collection_schema(config: CollectionConfig) -> CollectionSchema:
         ),
         FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=config.dimension),
     ]
+    for field_spec in config.extra_fields:
+        field_kwargs = {}
+        if field_spec.dtype == DataType.VARCHAR and field_spec.max_length:
+            field_kwargs["max_length"] = field_spec.max_length
+        fields.append(FieldSchema(name=field_spec.name, dtype=field_spec.dtype, **field_kwargs))
     return CollectionSchema(fields, description=f"{config.name} embeddings")
 
 
@@ -50,19 +63,31 @@ class HybridMilvusIndex:
         self,
         image_cfg: CollectionConfig,
         text_cfg: CollectionConfig,
-        attrs_fields: Sequence[Tuple[str, DataType]],
+        attrs_fields: Sequence[FieldSpec],
         *,
+        model_cfg: Optional[CollectionConfig] = None,
+        caption_cfg: Optional[CollectionConfig] = None,
         image_collection_name: str | None = None,
         text_collection_name: str | None = None,
         attrs_collection_name: str = "attrs_parts",
+        model_collection_name: Optional[str] = None,
+        caption_collection_name: Optional[str] = None,
     ):
         self._image_cfg = image_cfg
         self._text_cfg = text_cfg
+        self._model_cfg = model_cfg
+        self._caption_cfg = caption_cfg
         self._attrs_fields = list(attrs_fields)
-        self._pk_max_length = max(image_cfg.pk_max_length, text_cfg.pk_max_length, 128)
+        pk_lengths = [image_cfg.pk_max_length, text_cfg.pk_max_length]
+        if caption_cfg:
+            pk_lengths.append(caption_cfg.pk_max_length)
+        pk_lengths.append(128)
+        self._pk_max_length = max(pk_lengths)
         image_name = image_collection_name or image_cfg.name
         text_name = text_collection_name or text_cfg.name
         attrs_name = attrs_collection_name
+        model_name = model_collection_name or (model_cfg.name if model_cfg else None)
+        caption_name = caption_collection_name or (caption_cfg.name if caption_cfg else None)
 
         self.image_collection = self._get_or_create_collection(
             image_name, build_collection_schema(image_cfg)
@@ -70,15 +95,25 @@ class HybridMilvusIndex:
         self.text_collection = self._get_or_create_collection(
             text_name, build_collection_schema(text_cfg)
         )
+        self.model_collection = None
+        self._model_extra_fields: Sequence[FieldSpec] = ()
+        if model_cfg and model_name:
+            self.model_collection = self._get_or_create_collection(model_name, build_collection_schema(model_cfg))
+            self._model_extra_fields = list(model_cfg.extra_fields)
         self._attrs_vector_dim = 2
         self.attrs_collection = self._get_or_create_collection(
             attrs_name, self._create_attrs_schema(attrs_name, self._attrs_fields, self._attrs_vector_dim)
         )
+        self.caption_collection = None
+        if caption_cfg and caption_name:
+            self.caption_collection = self._get_or_create_collection(
+                caption_name, build_collection_schema(caption_cfg)
+            )
 
     def _create_attrs_schema(
         self,
         collection_name: str,
-        attrs_fields: Sequence[Tuple[str, DataType]],
+        attrs_fields: Sequence[FieldSpec],
         vector_dim: int = 2,
     ) -> CollectionSchema:
         fields = [
@@ -91,11 +126,11 @@ class HybridMilvusIndex:
             ),
             FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=vector_dim),
         ]
-        for name, dtype in attrs_fields:
+        for field_spec in attrs_fields:
             field_kwargs = {}
-            if dtype == DataType.VARCHAR:
-                field_kwargs["max_length"] = 512
-            fields.append(FieldSchema(name=name, dtype=dtype, **field_kwargs))
+            if field_spec.dtype == DataType.VARCHAR:
+                field_kwargs["max_length"] = field_spec.max_length or 512
+            fields.append(FieldSchema(name=field_spec.name, dtype=field_spec.dtype, **field_kwargs))
         return CollectionSchema(fields, description="Structured equipment attributes")
 
     def _get_or_create_collection(self, name: str, schema: CollectionSchema) -> Collection:
@@ -143,6 +178,24 @@ class HybridMilvusIndex:
                 "metric_type": "L2",
             },
         )
+        if self.model_collection and self._model_cfg:
+            self.model_collection.create_index(
+                field_name="vector",
+                index_params={
+                    "index_type": self._model_cfg.index_type,
+                    "metric_type": self._model_cfg.metric_type,
+                    "params": {"efConstruction": self._model_cfg.ef_construction, "M": self._model_cfg.M},
+                },
+            )
+        if self.caption_collection and self._caption_cfg:
+            self.caption_collection.create_index(
+                field_name="vector",
+                index_params={
+                    "index_type": self._caption_cfg.index_type,
+                    "metric_type": self._caption_cfg.metric_type,
+                    "params": {"efConstruction": self._caption_cfg.ef_construction, "M": self._caption_cfg.M},
+                },
+            )
 
     def insert(
         self,
@@ -150,6 +203,8 @@ class HybridMilvusIndex:
         image_vectors: Iterable[Sequence[float]],
         text_vectors: Iterable[Sequence[float]],
         attrs_rows: List[Dict[str, object]],
+        *,
+        caption_vectors: Optional[Iterable[Sequence[float]]] = None,
     ) -> None:
         """Insert preprocessed data into the Milvus collections."""
         primary_keys = [str(pk) for pk in primary_keys]
@@ -166,13 +221,21 @@ class HybridMilvusIndex:
         self.image_collection.insert([primary_keys, image_data])
         self.text_collection.insert([primary_keys, text_data])
 
+        if self.caption_collection:
+            if caption_vectors is None:
+                raise ValueError("caption_vectors must be provided when caption collection is configured.")
+            caption_data = [list(vec) for vec in caption_vectors]
+            if len(caption_data) != len(primary_keys):
+                raise ValueError("Primary key count must match number of caption vectors.")
+            self.caption_collection.insert([primary_keys, caption_data])
+
         attr_vectors = [[0.0] * self._attrs_vector_dim for _ in attrs_rows]
         if len(attrs_rows) != len(primary_keys):
             raise ValueError("Primary key count must match number of attribute rows.")
 
         insert_payload = [primary_keys, attr_vectors]
-        for field_name, _ in self._attrs_fields:
-            column = [row.get(field_name) for row in attrs_rows]
+        for field_spec in self._attrs_fields:
+            column = [row.get(field_spec.name) for row in attrs_rows]
             insert_payload.append(column)
         self.attrs_collection.insert(insert_payload)
 
@@ -181,12 +244,20 @@ class HybridMilvusIndex:
         self.image_collection.flush()
         self.text_collection.flush()
         self.attrs_collection.flush()
+        if self.caption_collection:
+            self.caption_collection.flush()
+        if self.model_collection:
+            self.model_collection.flush()
 
     def load(self) -> None:
         """Load collections into memory for search operations."""
         self.image_collection.load()
         self.text_collection.load()
         self.attrs_collection.load()
+        if self.model_collection:
+            self.model_collection.load()
+        if self.caption_collection:
+            self.caption_collection.load()
 
     def search_images(
         self,
@@ -224,6 +295,26 @@ class HybridMilvusIndex:
         )
         return results[0]
 
+    def search_captions(
+        self,
+        query_vector: Sequence[float],
+        *,
+        top_k: int = 10,
+        search_params: Dict[str, object] | None = None,
+        output_fields: Sequence[str] | None = None,
+    ):
+        if not self.caption_collection or not self._caption_cfg:
+            return []
+        params = search_params or {"metric_type": self._caption_cfg.metric_type, "params": {"ef": 64}}
+        results = self.caption_collection.search(
+            data=[list(query_vector)],
+            anns_field="vector",
+            param=params,
+            limit=top_k,
+            output_fields=output_fields,
+        )
+        return results[0]
+
     def fetch_attributes(self, primary_keys: Sequence[str], output_fields: Sequence[str]) -> List[Dict[str, object]]:
         """Fetch attribute rows for the specified primary keys."""
         if not primary_keys:
@@ -233,14 +324,104 @@ class HybridMilvusIndex:
         expr = f"pk in [{quoted}]"
         return self.attrs_collection.query(expr=expr, output_fields=list(output_fields))
 
+    def query_attributes_by_model(
+        self,
+        model_id: str,
+        output_fields: Sequence[str],
+    ) -> List[Dict[str, object]]:
+        """Query attribute rows that belong to the specified model."""
+        if not model_id:
+            return []
+        safe_model_id = str(model_id).replace('"', '\\"')
+        expr = f'model_id == "{safe_model_id}"'
+        try:
+            return self.attrs_collection.query(expr=expr, output_fields=list(output_fields))
+        except Exception:
+            return []
+
+    def upsert_model(self, *, model_id: str, text_vector: Sequence[float], extra_values: Dict[str, object]) -> None:
+        """Insert or replace model-level text embeddings."""
+        if not self.model_collection:
+            raise RuntimeError("Model collection is not configured.")
+        pk = str(model_id)
+        expr = f'pk in ["{pk}"]'
+        try:
+            self.model_collection.delete(expr)
+        except Exception:
+            # Ignore delete failures; the insert below will still succeed.
+            pass
+
+        columns = [
+            [pk],
+            [list(text_vector)],
+        ]
+
+        for field_spec in self._model_extra_fields:
+            value = extra_values.get(field_spec.name, "")
+            if value is None:
+                value = ""
+            if field_spec.dtype == DataType.VARCHAR:
+                value = str(value)
+                if field_spec.max_length:
+                    value = value[: field_spec.max_length]
+            columns.append([value])
+
+        self.model_collection.insert(columns)
+
+    def get_model(self, model_id: str, output_fields: Optional[Sequence[str]] = None) -> Optional[Dict[str, object]]:
+        if not self.model_collection:
+            return None
+        fields = list(output_fields) if output_fields else ["*"]
+        expr = f'pk in ["{str(model_id)}"]'
+        rows = self.model_collection.query(expr=expr, output_fields=fields)
+        return rows[0] if rows else None
+
+    def fetch_models(self, model_ids: Sequence[str], output_fields: Sequence[str]) -> Dict[str, Dict[str, object]]:
+        if not model_ids or not self.model_collection:
+            return {}
+        ids = [str(mid) for mid in model_ids]
+        quoted = ",".join(f'"{mid}"' for mid in ids)
+        expr = f"pk in [{quoted}]"
+        rows = self.model_collection.query(expr=expr, output_fields=list(output_fields))
+        return {row["pk"]: row for row in rows}
+
+    def search_models(
+        self,
+        query_vector: Sequence[float],
+        *,
+        top_k: int = 10,
+        search_params: Optional[Dict[str, object]] = None,
+        output_fields: Sequence[str] | None = None,
+    ):
+        if not self.model_collection or not self._model_cfg:
+            return []
+        params = search_params or {
+            "metric_type": self._model_cfg.metric_type,
+            "params": {"ef": 64},
+        }
+        results = self.model_collection.search(
+            data=[list(query_vector)],
+            anns_field="vector",
+            param=params,
+            limit=top_k,
+            output_fields=output_fields,
+        )
+        return results[0]
+
     def describe(self) -> Dict[str, Dict[str, object]]:
         """Return information about managed collections."""
         info: Dict[str, Dict[str, object]] = {}
-        for label, collection in (
+        collections = [
             ("image", self.image_collection),
             ("text", self.text_collection),
             ("attrs", self.attrs_collection),
-        ):
+        ]
+        if self.model_collection:
+            collections.append(("model", self.model_collection))
+        if self.caption_collection:
+            collections.append(("caption", self.caption_collection))
+
+        for label, collection in collections:
             try:
                 num_entities = collection.num_entities
             except Exception:  # pragma: no cover - runtime safeguard
@@ -262,4 +443,4 @@ class HybridMilvusIndex:
         return collection_name
 
 
-__all__ = ["CollectionConfig", "HybridMilvusIndex"]
+__all__ = ["CollectionConfig", "FieldSpec", "HybridMilvusIndex"]
