@@ -8,12 +8,17 @@ industrial equipment images using the Qwen3-VL-8B-Instruct model family.
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 from typing import Optional
 
 import torch
 from PIL import Image
-from transformers import AutoModelForCausalLM, AutoModelForVision2Seq, AutoProcessor
+from transformers import (
+    AutoModelForVision2Seq,
+    AutoProcessor,
+    Qwen3VLForConditionalGeneration,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +31,7 @@ class Qwen3VLCaptioner:
         model_name: str = "Qwen/Qwen3-VL-4B-Instruct",
         *,
         device: Optional[str] = None,
-        torch_dtype: torch.dtype | None = torch.float16,
+        dtype: torch.dtype | None = torch.float16,
         prompt: str = (
             "Describe this industrial component in detail, including its visible shape, "
             "color, material, labels, and any text on it."
@@ -35,7 +40,7 @@ class Qwen3VLCaptioner:
         do_sample: bool = False,
     ) -> None:
         self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self._dtype = torch_dtype
+        self._dtype = dtype
         self._prompt = prompt.strip()
         self._max_new_tokens = max_new_tokens
         self._do_sample = do_sample
@@ -44,14 +49,19 @@ class Qwen3VLCaptioner:
         primary_model = model_name
         fallback_model = "Qwen/Qwen2-VL-7B-Instruct"
 
+        dtype = self._dtype if self._device == "cuda" and self._dtype is not None else torch.float32
+
         try:
             self._processor = AutoProcessor.from_pretrained(primary_model, trust_remote_code=True)
-            self._model = AutoModelForCausalLM.from_pretrained(
-                primary_model,
-                torch_dtype=self._dtype,
-                device_map="auto" if self._device == "cuda" else None,
-                trust_remote_code=True,
-            )
+            load_kwargs = {
+                "dtype": dtype,
+                "trust_remote_code": True,
+            }
+            if self._device == "cuda":
+                load_kwargs["device_map"] = "auto"
+            self._model = Qwen3VLForConditionalGeneration.from_pretrained(primary_model, **load_kwargs)
+            if self._device != "cuda":
+                self._model.to(self._device)
             self._model_name = primary_model
             logger.info("Loaded caption model %s", primary_model)
         except (ValueError, KeyError, OSError) as exc:
@@ -59,18 +69,18 @@ class Qwen3VLCaptioner:
             self._processor = AutoProcessor.from_pretrained(fallback_model, trust_remote_code=True)
             self._model = AutoModelForVision2Seq.from_pretrained(
                 fallback_model,
-                torch_dtype=self._dtype,
+                dtype=dtype,
                 trust_remote_code=True,
             ).to(self._device)
             self._uses_chat_template = False
             self._model_name = fallback_model
 
-        if device and device != "cuda":
-            self._model.to(self._device)
         self._model.eval()
 
     def generate(self, image_path: str | Path, *, prompt: Optional[str] = None) -> str:
         """Return a caption describing the provided image."""
+        start_time = time.perf_counter()
+        logger.info("Captioner invoked: model=%s image=%s", self._model_name, image_path)
         image = Image.open(image_path).convert("RGB")
         text_prompt = (prompt or self._prompt).strip()
 
@@ -124,6 +134,22 @@ class Qwen3VLCaptioner:
             clean_up_tokenization_spaces=False,
         )
         caption = captions[0] if captions else ""
+        total_duration = time.perf_counter() - start_time
+        logger.info(
+            "Captioner completed: model=%s image=%s chars=%d duration=%.2fs",
+            self._model_name,
+            image_path,
+            len(caption),
+            total_duration,
+        )
+        if caption:
+            logger.info(
+                "Caption output for %s: %s",
+                image_path,
+                caption.replace("\n", " "),
+            )
+        else:
+            logger.info("Caption output for %s is empty.", image_path)
         return caption.strip()
 
 

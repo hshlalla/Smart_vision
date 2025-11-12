@@ -42,6 +42,34 @@
 - 기존 PK 충돌 시 자동 증가 index로 재할당.
 - 이미지 사본은 `MEDIA_ROOT`(기본 `media/`) 아래 `PK.png`로 저장.
 
+### 3.4 전처리 파이프라인 시각화
+`NormalizedRecord`는 아래 흐름의 최종 산출물로, 이미지/텍스트 임베딩·정규화 메타데이터·OCR 텍스트를 한 번에 묶어 하이브리드 인덱서에 전달한다. 덕분에 Milvus 컬렉션(`image_collection`, `text_collection`, `model_ID index`)과 API 계층에서 동일한 DTO를 그대로 재사용할 수 있다.
+
+```mermaid
+graph TD
+    Input["Input:<br/>Image Path + Metadata"] --> OCR["PaddleOCR<br/>extract()"]
+    OCR --> MetaNorm["MetadataNormalizer<br/>normalize()"]
+    Input -. metadata .-> MetaNorm
+    MetaNorm --> Caption["Qwen3-VL<br/>generate()"]
+    Input -. image .-> Caption
+    Input --> Vision["BGE-VL<br/>encode()"]
+
+    OCR --> OCRText["OCR Text Cleanup"]
+    OCRText --> MetaNorm
+    MetaNorm --> TextEmbed["BGE-M3 encode_document<br/>(OCR + Caption)"]
+    Caption --> TextEmbed
+
+    Vision --> Record["NormalizedRecord"]
+    TextEmbed --> Record
+    OCRText --> Record
+    Caption --> Record
+    MetaNorm --> Record
+
+    Record --> ImageCol["image_collection"]
+    Record --> TextCol["text_collection"]
+    Record --> ModelText["model_ID index"]
+```
+
 ## 4. Milvus 하이브리드 인덱스 구조
 | 컬렉션 | 주요 필드 | 설명 |
 |--------|-----------|------|
