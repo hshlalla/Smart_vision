@@ -15,6 +15,7 @@ import logging
 import os
 import re
 import shutil
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
@@ -32,6 +33,15 @@ from .retrieval.milvus_hybrid_index import CollectionConfig, FieldSpec, HybridMi
 from .search.fusion_retriever import FusionWeights, HybridFusionRetriever
 
 logger = logging.getLogger(__name__)
+
+# Enable verbose logging when this module is imported/run directly.
+# If the root logger already has handlers (e.g., caller configured logging),
+# this will be a no-op.
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
 
 
 @dataclass
@@ -364,9 +374,16 @@ class HybridSearchOrchestrator:
             raise ValueError("metadata must include a non-empty 'model_id' field for indexing.")
 
         logger.info("Starting indexing for model_id=%s with image=%s", model_id, image_path)
+
+        t_start = time.perf_counter()
         model_record = self.index_model_metadata(model_id, metadata)
+        t_after_model = time.perf_counter()
+        logger.info("Timing: index_model_metadata done in %.2fs for model_id=%s", t_after_model - t_start, model_id)
 
         record = self.preprocessing(str(image_path), metadata)
+        t_after_preprocess = time.perf_counter()
+        logger.info("Timing: preprocessing done in %.2fs for model_id=%s", t_after_preprocess - t_after_model, model_id)
+
         normalized_metadata = dict(record.metadata)
         logger.debug(
             "Image preprocessed: model_id=%s, image_dim=%d, ocr_dim=%d, caption_dim=%d",
@@ -383,6 +400,9 @@ class HybridSearchOrchestrator:
             record.ocr_tokens,
             record.caption_text,
         )
+        t_after_update_texts = time.perf_counter()
+        logger.info("Timing: _update_model_with_texts done in %.2fs for model_id=%s",
+                    t_after_update_texts - t_after_preprocess, model_id)
 
         primary_key = normalized_metadata.get("pk") or metadata.get("pk")
         if primary_key and self._primary_key_exists(primary_key):
@@ -419,6 +439,7 @@ class HybridSearchOrchestrator:
         except Exception as exc:
             logger.warning("Failed to store image copy for %s: %s", primary_key, exc)
 
+        t_before_insert = time.perf_counter()
         self.index.insert(
             primary_keys=[primary_key],
             image_vectors=[record.image_vector.tolist()],
@@ -427,6 +448,12 @@ class HybridSearchOrchestrator:
             caption_vectors=[record.caption_vector.tolist()],
         )
         self.index.flush()
+        t_after_flush = time.perf_counter()
+        logger.info(
+            "Timing: insert+flush done in %.2fs for model_id=%s",
+            t_after_flush - t_before_insert,
+            model_id,
+        )
         logger.info("Completed indexing: model_id=%s, image_pk=%s, tokens=%d",
                     model_id, primary_key, len(record.ocr_tokens))
 

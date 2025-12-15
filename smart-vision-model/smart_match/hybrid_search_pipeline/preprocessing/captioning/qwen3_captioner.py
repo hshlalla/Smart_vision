@@ -28,7 +28,7 @@ class Qwen3VLCaptioner:
 
     def __init__(
         self,
-        model_name: str = "Qwen/Qwen3-VL-4B-Instruct",
+        model_name: str = "Qwen/Qwen3-VL-2B-Instruct",
         *,
         device: Optional[str] = None,
         dtype: torch.dtype | None = torch.float16,

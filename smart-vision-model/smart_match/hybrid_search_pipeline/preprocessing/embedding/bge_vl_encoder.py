@@ -32,7 +32,7 @@ class BGEVLImageEncoder:
     ) -> None:
         self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self._dtype = dtype
-        self._processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=trust_remote_code)
+        self._processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=trust_remote_code,use_fast=True)
         self._model = AutoModel.from_pretrained(
             model_name,
             dtype=self._dtype,

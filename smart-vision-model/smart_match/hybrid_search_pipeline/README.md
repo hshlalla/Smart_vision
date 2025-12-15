@@ -3,7 +3,6 @@
 - `hybrid_pipeline_runner.py`는 전체 파이프라인의 오케스트레이터입니다.  
   - BGE-VL 이미지 임베더, BGE-M3 텍스트 임베더, PaddleOCR-VL OCR 엔진을 초기화합니다.  
   - Milvus 컬렉션을 생성하고 로딩하며, 자동으로 `model_id::img_###` 형식의 PK를 할당해 중복 없이 이미지를 저장합니다.  
-  - `index_model_metadata`, `preprocess_and_index`, `index_tracker_model`, `bulk_index` 등을 통해 메타데이터·OCR·이미지 임베딩을 결합합니다.
 - `data_collection/`, `preprocessing/`, `retrieval/`, `search/` 하위폴더는 각각 입력 데이터, 전처리, Milvus 인덱스, 하이브리드 점수 결합 로직을 담당합니다(각 폴더 README 참조).
 - `resources/`는 파이프라인에서 참조하는 보조 JSON 데이터를 저장합니다.
 
