@@ -86,10 +86,4 @@ docker run -d \
 | `MODEL_DIR` | Directory for model artifacts | models |
 | `LOG_DIR` | Directory for log files | logs |
 
-## License
 
-Proprietary - SurplusGLOBAL AI Team
-
-## Contact
-
-For questions and support, please contact the SurplusGLOBAL AI Team.
