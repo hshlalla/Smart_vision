@@ -1,6 +1,6 @@
 # Smart Vision Project
 
-A machine learning based intelligence platform for SurplusGLOBAL Smart Vision.
+A machine learning based intelligence platform for recognize parts
 
 ## Project Structure
 
