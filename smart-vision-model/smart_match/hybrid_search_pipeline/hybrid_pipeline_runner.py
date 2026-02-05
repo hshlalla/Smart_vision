@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
+import torch
 from pymilvus import DataType, connections
 
 from .data_collection.tracker_dataset import TrackerDataset
@@ -71,12 +72,27 @@ class HybridSearchOrchestrator:
         self.vision_encoder = BGEVLImageEncoder()
         self.text_encoder = BGEM3TextEncoder()
         self.ocr_engine = PaddleOCRVLPipeline()
-        self.captioner = Qwen3VLCaptioner(
-            prompt=(
-                "Describe this industrial component in detail, including its visible shape, color, "
-                "material, labels, and any text on it."
+        enable_caption_env = os.getenv("ENABLE_CAPTIONER")
+        if enable_caption_env is None:
+            enable_caption = torch.cuda.is_available()
+        else:
+            enable_caption = enable_caption_env.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+        if enable_caption:
+            self.captioner = Qwen3VLCaptioner(
+                prompt=(
+                    "Describe this industrial component in detail, including its visible shape, color, "
+                    "material, labels, and any text on it."
+                )
             )
-        )
+            logger.info("Captioner enabled (ENABLE_CAPTIONER=%s).", enable_caption_env)
+        else:
+            self.captioner = None
+            logger.info(
+                "Captioner disabled (ENABLE_CAPTIONER=%s, cuda=%s).",
+                enable_caption_env,
+                torch.cuda.is_available(),
+            )
         self.metadata_normalizer = MetadataNormalizer()
         self.preprocessing = PreprocessingPipeline(
             vision_encoder=self.vision_encoder,
