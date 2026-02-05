@@ -34,11 +34,7 @@ class BGEM3TextEncoder:
         self._dtype = dtype if self._device == "cuda" else torch.float32
         self.embedding_dim = embedding_dim
         self._tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=trust_remote_code)
-        self._model = AutoModel.from_pretrained(
-            model_name,
-            trust_remote_code=trust_remote_code,
-            torch_dtype=self._dtype,
-        ).to(self._device)
+        self._model = self._load_model(model_name, trust_remote_code=trust_remote_code).to(self._device)
         self._model.eval()
         self._doc_instruction = document_instruction.strip() if document_instruction else ""
         self._query_instruction = query_instruction.strip() if query_instruction else ""
@@ -97,6 +93,21 @@ class BGEM3TextEncoder:
         logger.info("Encoding query text")
         instruction = self._query_instruction or None
         return self.encode(text, instruction=instruction)
+
+    def _load_model(self, model_name: str, *, trust_remote_code: bool) -> torch.nn.Module:
+        """Load model with dtype kwarg compatible across transformers versions."""
+        try:
+            return AutoModel.from_pretrained(
+                model_name,
+                trust_remote_code=trust_remote_code,
+                dtype=self._dtype,
+            )
+        except TypeError:
+            return AutoModel.from_pretrained(
+                model_name,
+                trust_remote_code=trust_remote_code,
+                torch_dtype=self._dtype,
+            )
 
 
 __all__ = ["BGEM3TextEncoder"]

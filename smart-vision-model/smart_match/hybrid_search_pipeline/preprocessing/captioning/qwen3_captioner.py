@@ -66,7 +66,7 @@ class Qwen3VLCaptioner:
         try:
             self._processor = self._load_processor(primary_model)
             load_kwargs = {
-                "torch_dtype": dtype,
+                "dtype": dtype,
                 "trust_remote_code": True,
             }
             if self._device == "cuda":
@@ -82,7 +82,7 @@ class Qwen3VLCaptioner:
                 self._processor = self._load_processor(fallback_model)
                 self._model = self._load_model(
                     fallback_model,
-                    {"torch_dtype": dtype, "trust_remote_code": True},
+                    {"dtype": dtype, "trust_remote_code": True},
                 ).to(self._device)
                 self._model_name = fallback_model
             except Exception as fallback_exc:

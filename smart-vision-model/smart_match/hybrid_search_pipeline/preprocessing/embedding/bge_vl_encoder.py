@@ -48,11 +48,7 @@ class BGEVLImageEncoder:
                 trust_remote_code=trust_remote_code,
                 use_fast=False,
             )
-        self._model = AutoModel.from_pretrained(
-            model_name,
-            torch_dtype=self._dtype,
-            trust_remote_code=trust_remote_code,
-        ).to(self._device)
+        self._model = self._load_model(model_name, trust_remote_code=trust_remote_code).to(self._device)
         self._model.eval()
         self.embedding_dim = self._infer_embedding_dim(embedding_dim)
         logger.info(
@@ -79,6 +75,21 @@ class BGEVLImageEncoder:
         logger.info("Image encoding complete: dim=%d", vector.shape[-1])
 
         return vector
+
+    def _load_model(self, model_name: str, *, trust_remote_code: bool) -> torch.nn.Module:
+        """Load model with dtype kwarg compatible across transformers versions."""
+        try:
+            return AutoModel.from_pretrained(
+                model_name,
+                dtype=self._dtype,
+                trust_remote_code=trust_remote_code,
+            )
+        except TypeError:
+            return AutoModel.from_pretrained(
+                model_name,
+                torch_dtype=self._dtype,
+                trust_remote_code=trust_remote_code,
+            )
 
     def _infer_embedding_dim(self, override_dim: Optional[int]) -> int:
         if override_dim is not None:
