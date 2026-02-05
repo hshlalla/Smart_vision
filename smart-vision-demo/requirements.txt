@@ -1,1 +1,2 @@
 gradio>=6.5.1,<7
+torchvision==0.22.1

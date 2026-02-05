@@ -14,12 +14,22 @@ from typing import Optional
 
 import torch
 from PIL import Image
-from transformers import AutoModelForVision2Seq, AutoProcessor
+from transformers import AutoImageProcessor, AutoModelForCausalLM, AutoProcessor, AutoTokenizer
 
 try:  # Optional: only available on newer `transformers` releases.
     from transformers import Qwen3VLForConditionalGeneration  # type: ignore
 except ImportError:  # pragma: no cover
     Qwen3VLForConditionalGeneration = None
+
+try:  # Optional: only available on newer `transformers` releases.
+    from transformers import Qwen2VLForConditionalGeneration  # type: ignore
+except ImportError:  # pragma: no cover
+    Qwen2VLForConditionalGeneration = None
+
+try:  # Optional: for Qwen2/Qwen3 processor construction.
+    from transformers import AutoVideoProcessor  # type: ignore
+except ImportError:  # pragma: no cover
+    AutoVideoProcessor = None
 
 logger = logging.getLogger(__name__)
 
@@ -54,36 +64,87 @@ class Qwen3VLCaptioner:
         dtype = self._dtype if self._device == "cuda" and self._dtype is not None else torch.float32
 
         try:
-            self._processor = AutoProcessor.from_pretrained(primary_model, trust_remote_code=True)
+            self._processor = self._load_processor(primary_model)
             load_kwargs = {
                 "torch_dtype": dtype,
                 "trust_remote_code": True,
             }
             if self._device == "cuda":
                 load_kwargs["device_map"] = "auto"
-            if Qwen3VLForConditionalGeneration is not None:
-                self._model = Qwen3VLForConditionalGeneration.from_pretrained(primary_model, **load_kwargs)
-            else:
-                self._model = AutoModelForVision2Seq.from_pretrained(primary_model, **load_kwargs)
+            self._model = self._load_model(primary_model, load_kwargs)
             if self._device != "cuda":
                 self._model.to(self._device)
             self._model_name = primary_model
             logger.info("Loaded caption model %s", primary_model)
-        except (ValueError, KeyError, OSError) as exc:
+        except Exception as exc:  # pragma: no cover - runtime dependency variability
             logger.warning("Failed to load %s (%s); falling back to %s", primary_model, exc, fallback_model)
-            self._processor = AutoProcessor.from_pretrained(fallback_model, trust_remote_code=True)
-            self._model = AutoModelForVision2Seq.from_pretrained(
-                fallback_model,
-                torch_dtype=dtype,
-                trust_remote_code=True,
-            ).to(self._device)
-            self._uses_chat_template = False
-            self._model_name = fallback_model
+            try:
+                self._processor = self._load_processor(fallback_model)
+                self._model = self._load_model(
+                    fallback_model,
+                    {"torch_dtype": dtype, "trust_remote_code": True},
+                ).to(self._device)
+                self._model_name = fallback_model
+            except Exception as fallback_exc:
+                logger.warning("Failed to load fallback caption model %s (%s); disabling captioner", fallback_model, fallback_exc)
+                self._processor = None
+                self._model = None
+                self._model_name = "disabled"
 
-        self._model.eval()
+        if self._model is not None:
+            self._model.eval()
+
+    @staticmethod
+    def _load_model(model_name: str, load_kwargs: dict) -> torch.nn.Module:
+        """Load a Qwen-VL model with compatibility across transformers versions."""
+        if "Qwen3-VL" in model_name and Qwen3VLForConditionalGeneration is not None:
+            return Qwen3VLForConditionalGeneration.from_pretrained(model_name, **load_kwargs)
+        if "Qwen2-VL" in model_name and Qwen2VLForConditionalGeneration is not None:
+            return Qwen2VLForConditionalGeneration.from_pretrained(model_name, **load_kwargs)
+
+        if Qwen3VLForConditionalGeneration is not None:
+            return Qwen3VLForConditionalGeneration.from_pretrained(model_name, **load_kwargs)
+        if Qwen2VLForConditionalGeneration is not None:
+            return Qwen2VLForConditionalGeneration.from_pretrained(model_name, **load_kwargs)
+
+        # Last resort: rely on remote code registering a compatible causal LM.
+        return AutoModelForCausalLM.from_pretrained(model_name, **load_kwargs)
+
+    @staticmethod
+    def _load_processor(model_name: str):
+        """Load a processor while avoiding known AutoProcessor issues for Qwen-VL in some envs."""
+        if "Qwen3-VL" in model_name:
+            from transformers.models.qwen3_vl.processing_qwen3_vl import Qwen3VLProcessor
+
+            return Qwen3VLCaptioner._build_qwen_processor(Qwen3VLProcessor, model_name)
+        if "Qwen2-VL" in model_name:
+            from transformers.models.qwen2_vl.processing_qwen2_vl import Qwen2VLProcessor
+
+            return Qwen3VLCaptioner._build_qwen_processor(Qwen2VLProcessor, model_name)
+
+        return AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
+
+    @staticmethod
+    def _build_qwen_processor(processor_cls, model_name: str):
+        tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+        image_processor = AutoImageProcessor.from_pretrained(model_name, trust_remote_code=True)
+        chat_template = getattr(tokenizer, "chat_template", None)
+
+        if AutoVideoProcessor is None:
+            raise ImportError("AutoVideoProcessor unavailable; install torchvision to enable Qwen-VL captioning.")
+        video_processor = AutoVideoProcessor.from_pretrained(model_name, trust_remote_code=True)
+
+        return processor_cls(
+            image_processor=image_processor,
+            tokenizer=tokenizer,
+            video_processor=video_processor,
+            chat_template=chat_template,
+        )
 
     def generate(self, image_path: str | Path, *, prompt: Optional[str] = None) -> str:
         """Return a caption describing the provided image."""
+        if self._processor is None or self._model is None:
+            return ""
         start_time = time.perf_counter()
         logger.info("Captioner invoked: model=%s image=%s", self._model_name, image_path)
         image = Image.open(image_path).convert("RGB")
