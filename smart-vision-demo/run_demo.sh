@@ -9,7 +9,11 @@ if [[ -f "$ENV_FILE" ]]; then
     echo "Loading environment variables from $ENV_FILE"
     export $(grep -v '^#' "$ENV_FILE" | xargs)
 else
-    echo "Warning: $ENV_FILE not found. Using existing environment variables."
+    if [[ -f ".env.example" ]]; then
+        echo "Warning: $ENV_FILE not found. Copy .env.example -> .env if you need custom settings."
+    else
+        echo "Warning: $ENV_FILE not found. Using existing environment variables."
+    fi
 fi
 
 # Install Python dependencies
@@ -29,6 +33,9 @@ if [[ ":$PYTHONPATH:" != *":$PROJECT_ROOT"* ]]; then
     export PYTHONPATH="$PYTHONPATH:$PROJECT_ROOT"
 fi
 
+# Default Milvus URI for local demo runs.
+export MILVUS_URI="${MILVUS_URI:-tcp://localhost:19530}"
+
 # Launch the Gradio demo application
 echo "Starting Gradio demo application..."
-python app.py
+python3 app.py

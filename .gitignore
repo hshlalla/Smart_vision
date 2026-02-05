@@ -1,11 +1,71 @@
-/.history
-/.venv
-/data
-/media
-/dataset
-/false
+# ---------- OS / Editor ----------
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.tmp
+.idea/
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# ---------- Local history / venv ----------
+.history/
+.venv/
+venv/
+ENV/
+
+# ---------- Data / outputs ----------
+/data/
+/media/
+/dataset/
+/false/
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# ---------- Logs ----------
 *.log
-*.xlsx
-*.env
-*.pyc
+logs/
+**/logs/
+!**/logs/.gitkeep
+
+# ---------- Docker volumes / large artifacts ----------
 volumes/
+**/volumes/
+!**/volumes/.gitkeep
+
+models/
+**/models/
+!**/models/.gitkeep
+!**/models/README.md
+
+# ---------- Env / secrets ----------
+.env
+.env.*
+*.env
+!.env.example
+!.env.*.example
+!.env.template
+!.env.sample
+
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+
+# ---------- Misc ----------
+*.xlsx
