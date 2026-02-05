@@ -22,7 +22,7 @@ dependencies = [
     "safetensors>=0.5.3",
     "scikit-learn>=1.6.1",
     "torch>=2.7.0",
-    "transformers>=4.51.3",
+    "transformers>=5.0.0",
     "paddleocr[doc-parser]>=2.9.1",
     "paddlepaddle-gpu==2.6.1",
     "pymilvus>=2.4.9",

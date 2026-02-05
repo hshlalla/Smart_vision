@@ -48,7 +48,8 @@ class Qwen3VLCaptioner:
 
         self._uses_chat_template = True
         primary_model = model_name
-        fallback_model = "Qwen/Qwen2-VL-7B-Instruct"
+        # Keep the fallback reasonably small so demo runs don't trigger multi-GB downloads.
+        fallback_model = "Qwen/Qwen2-VL-2B-Instruct"
 
         dtype = self._dtype if self._device == "cuda" and self._dtype is not None else torch.float32
 
