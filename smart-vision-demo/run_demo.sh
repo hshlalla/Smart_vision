@@ -7,6 +7,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Prefer repo virtualenv if present (../.venv), otherwise fallback to system python.
+PYTHON="../.venv/bin/python"
+if [[ ! -x "$PYTHON" ]]; then
+  PYTHON="python3"
+fi
+
 # Load environment variables from .env file
 ENV_FILE=".env"
 if [[ -f "$ENV_FILE" ]]; then
@@ -24,7 +30,7 @@ fi
 REQ_FILE="requirements.txt"
 if [[ -f "$REQ_FILE" ]]; then
     echo "Installing Python dependencies from $REQ_FILE"
-    python3 -m pip install -r "$REQ_FILE"
+    "$PYTHON" -m pip install -r "$REQ_FILE"
 else
     echo "Warning: $REQ_FILE not found. Skipping pip install."
 fi
@@ -42,4 +48,4 @@ export MILVUS_URI="${MILVUS_URI:-tcp://localhost:19530}"
 
 # Launch the Gradio demo application
 echo "Starting Gradio demo application..."
-python3 app.py
+"$PYTHON" app.py
