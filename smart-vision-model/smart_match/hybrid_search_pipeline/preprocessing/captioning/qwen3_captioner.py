@@ -14,11 +14,12 @@ from typing import Optional
 
 import torch
 from PIL import Image
-from transformers import (
-    AutoModelForVision2Seq,
-    AutoProcessor,
-    Qwen3VLForConditionalGeneration,
-)
+from transformers import AutoModelForVision2Seq, AutoProcessor
+
+try:  # Optional: only available on newer `transformers` releases.
+    from transformers import Qwen3VLForConditionalGeneration  # type: ignore
+except ImportError:  # pragma: no cover
+    Qwen3VLForConditionalGeneration = None
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,10 @@ class Qwen3VLCaptioner:
             }
             if self._device == "cuda":
                 load_kwargs["device_map"] = "auto"
-            self._model = Qwen3VLForConditionalGeneration.from_pretrained(primary_model, **load_kwargs)
+            if Qwen3VLForConditionalGeneration is not None:
+                self._model = Qwen3VLForConditionalGeneration.from_pretrained(primary_model, **load_kwargs)
+            else:
+                self._model = AutoModelForVision2Seq.from_pretrained(primary_model, **load_kwargs)
             if self._device != "cuda":
                 self._model.to(self._device)
             self._model_name = primary_model
