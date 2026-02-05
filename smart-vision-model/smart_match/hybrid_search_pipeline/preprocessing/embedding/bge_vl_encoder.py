@@ -31,8 +31,23 @@ class BGEVLImageEncoder:
         embedding_dim: Optional[int] = None,
     ) -> None:
         self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self._dtype = dtype
-        self._processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=trust_remote_code,use_fast=True)
+        self._dtype = dtype if self._device == "cuda" else torch.float32
+
+        # Some fast image processors require torchvision. Fall back to the slow processor when
+        # torchvision isn't installed (common on minimal CPU environments).
+        try:
+            self._processor = AutoProcessor.from_pretrained(
+                model_name,
+                trust_remote_code=trust_remote_code,
+                use_fast=True,
+            )
+        except ImportError as exc:
+            logger.warning("Fast processor unavailable (%s); falling back to use_fast=False", exc)
+            self._processor = AutoProcessor.from_pretrained(
+                model_name,
+                trust_remote_code=trust_remote_code,
+                use_fast=False,
+            )
         self._model = AutoModel.from_pretrained(
             model_name,
             dtype=self._dtype,
