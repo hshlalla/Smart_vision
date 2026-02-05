@@ -90,6 +90,48 @@ class HybridSearchOrchestrator:
         self.media_root = Path(media_root_env).expanduser().resolve()
         self.media_root.mkdir(parents=True, exist_ok=True)
 
+        model_extra_fields = [
+            FieldSpec("metadata_text", DataType.VARCHAR, max_length=8192),
+            FieldSpec("ocr_text", DataType.VARCHAR, max_length=16384),
+            FieldSpec("caption_text", DataType.VARCHAR, max_length=8192),
+            FieldSpec("maker", DataType.VARCHAR, max_length=512),
+            FieldSpec("part_number", DataType.VARCHAR, max_length=512),
+            FieldSpec("category", DataType.VARCHAR, max_length=512),
+            FieldSpec("description", DataType.VARCHAR, max_length=2048),
+        ]
+
+        self.index = HybridMilvusIndex(
+            image_cfg=CollectionConfig(name=image_collection, dimension=self.vision_encoder.embedding_dim),
+            text_cfg=CollectionConfig(name=text_collection, dimension=self.text_encoder.embedding_dim),
+            caption_cfg=CollectionConfig(name="caption_parts", dimension=self.text_encoder.embedding_dim),
+            attrs_fields=[
+                FieldSpec("model_id", DataType.VARCHAR, max_length=256),
+                FieldSpec("maker", DataType.VARCHAR, max_length=256),
+                FieldSpec("part_number", DataType.VARCHAR, max_length=256),
+                FieldSpec("category", DataType.VARCHAR, max_length=256),
+                FieldSpec("ocr_text", DataType.VARCHAR, max_length=2048),
+                FieldSpec("caption_text", DataType.VARCHAR, max_length=2048),
+                FieldSpec("image_path", DataType.VARCHAR, max_length=512),
+            ],
+            model_cfg=CollectionConfig(
+                name=model_collection,
+                dimension=self.text_encoder.embedding_dim,
+                extra_fields=model_extra_fields,
+            ),
+            image_collection_name=image_collection,
+            text_collection_name=text_collection,
+            attrs_collection_name=attrs_collection,
+            model_collection_name=model_collection,
+            caption_collection_name="caption_parts",
+        )
+        self.index.create_indexes()
+        self.index.load()
+
+        self.retriever = HybridFusionRetriever(
+            cross_encoder=self._noop_cross_encoder,
+            weights=fusion_weights,
+        )
+
     def _init_captioner(self):
         prompt = (
             "Describe this industrial component in detail, including its visible shape, color, "
@@ -140,48 +182,6 @@ class HybridSearchOrchestrator:
 
         logger.warning("Unknown CAPTIONER_BACKEND=%s; captioning disabled.", backend)
         return None
-
-        model_extra_fields = [
-            FieldSpec("metadata_text", DataType.VARCHAR, max_length=8192),
-            FieldSpec("ocr_text", DataType.VARCHAR, max_length=16384),
-            FieldSpec("caption_text", DataType.VARCHAR, max_length=8192),
-            FieldSpec("maker", DataType.VARCHAR, max_length=512),
-            FieldSpec("part_number", DataType.VARCHAR, max_length=512),
-            FieldSpec("category", DataType.VARCHAR, max_length=512),
-            FieldSpec("description", DataType.VARCHAR, max_length=2048),
-        ]
-
-        self.index = HybridMilvusIndex(
-            image_cfg=CollectionConfig(name=image_collection, dimension=self.vision_encoder.embedding_dim),
-            text_cfg=CollectionConfig(name=text_collection, dimension=self.text_encoder.embedding_dim),
-            caption_cfg=CollectionConfig(name="caption_parts", dimension=self.text_encoder.embedding_dim),
-            attrs_fields=[
-                FieldSpec("model_id", DataType.VARCHAR, max_length=256),
-                FieldSpec("maker", DataType.VARCHAR, max_length=256),
-                FieldSpec("part_number", DataType.VARCHAR, max_length=256),
-                FieldSpec("category", DataType.VARCHAR, max_length=256),
-                FieldSpec("ocr_text", DataType.VARCHAR, max_length=2048),
-                FieldSpec("caption_text", DataType.VARCHAR, max_length=2048),
-                FieldSpec("image_path", DataType.VARCHAR, max_length=512),
-            ],
-            model_cfg=CollectionConfig(
-                name=model_collection,
-                dimension=self.text_encoder.embedding_dim,
-                extra_fields=model_extra_fields,
-            ),
-            image_collection_name=image_collection,
-            text_collection_name=text_collection,
-            attrs_collection_name=attrs_collection,
-            model_collection_name=model_collection,
-            caption_collection_name="caption_parts",
-        )
-        self.index.create_indexes()
-        self.index.load()
-
-        self.retriever = HybridFusionRetriever(
-            cross_encoder=self._noop_cross_encoder,
-            weights=fusion_weights,
-        )
 
     def _primary_key_exists(self, primary_key: str) -> bool:
         rows = self.index.fetch_attributes([primary_key], output_fields=["pk"])
