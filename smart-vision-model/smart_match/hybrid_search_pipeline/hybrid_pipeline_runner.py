@@ -24,6 +24,7 @@ import torch
 from pymilvus import DataType, connections
 
 from .data_collection.tracker_dataset import TrackerDataset
+from .preprocessing.captioning.gpt_captioner import GPTVLCaptioner
 from .preprocessing.captioning.qwen3_captioner import Qwen3VLCaptioner
 from .preprocessing.embedding.bge_m3_encoder import BGEM3TextEncoder
 from .preprocessing.embedding.bge_vl_encoder import BGEVLImageEncoder
@@ -72,27 +73,7 @@ class HybridSearchOrchestrator:
         self.vision_encoder = BGEVLImageEncoder()
         self.text_encoder = BGEM3TextEncoder()
         self.ocr_engine = PaddleOCRVLPipeline()
-        enable_caption_env = os.getenv("ENABLE_CAPTIONER")
-        if enable_caption_env is None:
-            enable_caption = torch.cuda.is_available()
-        else:
-            enable_caption = enable_caption_env.strip().lower() in {"1", "true", "yes", "y", "on"}
-
-        if enable_caption:
-            self.captioner = Qwen3VLCaptioner(
-                prompt=(
-                    "Describe this industrial component in detail, including its visible shape, color, "
-                    "material, labels, and any text on it."
-                )
-            )
-            logger.info("Captioner enabled (ENABLE_CAPTIONER=%s).", enable_caption_env)
-        else:
-            self.captioner = None
-            logger.info(
-                "Captioner disabled (ENABLE_CAPTIONER=%s, cuda=%s).",
-                enable_caption_env,
-                torch.cuda.is_available(),
-            )
+        self.captioner = self._init_captioner()
         self.metadata_normalizer = MetadataNormalizer()
         self.preprocessing = PreprocessingPipeline(
             vision_encoder=self.vision_encoder,
@@ -108,6 +89,57 @@ class HybridSearchOrchestrator:
         media_root_env = os.getenv("MEDIA_ROOT", "media")
         self.media_root = Path(media_root_env).expanduser().resolve()
         self.media_root.mkdir(parents=True, exist_ok=True)
+
+    def _init_captioner(self):
+        prompt = (
+            "Describe this industrial component in detail, including its visible shape, color, "
+            "material, labels, and any text on it."
+        )
+
+        backend = (os.getenv("CAPTIONER_BACKEND") or "").strip().lower()
+        enable_caption_env = os.getenv("ENABLE_CAPTIONER")
+        if enable_caption_env is None:
+            enable_caption = True
+        else:
+            enable_caption = enable_caption_env.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+        if not enable_caption:
+            logger.info("Captioner disabled via ENABLE_CAPTIONER=%s.", enable_caption_env)
+            return None
+
+        # Default selection:
+        # - If CAPTIONER_BACKEND is set, honor it.
+        # - Else if OPENAI_API_KEY exists, prefer GPT (fast on CPU).
+        # - Else if CUDA is available, prefer local Qwen captioner.
+        # - Else disable captioning (CPU local captioning is slow).
+        if not backend:
+            if os.getenv("OPENAI_API_KEY"):
+                backend = "gpt"
+            elif torch.cuda.is_available():
+                backend = "qwen"
+            else:
+                backend = "none"
+
+        if backend in {"none", "off", "false", "0"}:
+            logger.info("Captioner backend set to %s; captioning disabled.", backend)
+            return None
+
+        if backend in {"gpt", "openai"}:
+            try:
+                return GPTVLCaptioner(prompt=prompt)
+            except Exception:
+                logger.exception("Failed to initialize GPT captioner; disabling captioning.")
+                return None
+
+        if backend in {"qwen", "qwen3"}:
+            try:
+                return Qwen3VLCaptioner(prompt=prompt)
+            except Exception:
+                logger.exception("Failed to initialize Qwen captioner; disabling captioning.")
+                return None
+
+        logger.warning("Unknown CAPTIONER_BACKEND=%s; captioning disabled.", backend)
+        return None
 
         model_extra_fields = [
             FieldSpec("metadata_text", DataType.VARCHAR, max_length=8192),
