@@ -365,6 +365,8 @@ gradio_client_utils._json_schema_to_python_type = _safe_json_schema_to_python_ty
 
 
 if __name__ == "__main__":
+    import inspect
+
     share = os.getenv("GRADIO_SHARE", "false").lower() == "true"
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     media_candidates = {
@@ -372,12 +374,14 @@ if __name__ == "__main__":
         os.path.abspath(os.path.join(repo_root, "media")),
     }
     allowed_media_paths = [path for path in media_candidates if os.path.isdir(path)]
-    demo.launch(
-        server_name="0.0.0.0",
-        server_port=7861,
-        share=share,
-        show_api=False,
-        inbrowser=False,
-        prevent_thread_lock=False,
-        allowed_paths=allowed_media_paths or None,
-    )
+    launch_kwargs = {
+        "server_name": "0.0.0.0",
+        "server_port": 7861,
+        "share": share,
+        "show_api": False,
+        "inbrowser": False,
+        "prevent_thread_lock": False,
+        "allowed_paths": allowed_media_paths or None,
+    }
+    supported = set(inspect.signature(demo.launch).parameters)
+    demo.launch(**{key: value for key, value in launch_kwargs.items() if key in supported})
