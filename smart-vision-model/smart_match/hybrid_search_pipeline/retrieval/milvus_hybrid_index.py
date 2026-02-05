@@ -14,6 +14,10 @@ from typing import Dict, Iterable, List, Optional, Sequence
 
 from pymilvus import Collection, CollectionSchema, DataType, FieldSchema, utility
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class FieldSpec:
@@ -233,11 +237,14 @@ class HybridMilvusIndex:
         if len(attrs_rows) != len(primary_keys):
             raise ValueError("Primary key count must match number of attribute rows.")
 
-        insert_payload = [primary_keys, attr_vectors]
-        for field_spec in self._attrs_fields:
-            column = [row.get(field_spec.name) for row in attrs_rows]
-            insert_payload.append(column)
-        self.attrs_collection.insert(insert_payload)
+        self.attrs_collection.insert(
+            self._build_row_payload(
+                self.attrs_collection.schema,
+                primary_keys=primary_keys,
+                vectors=attr_vectors,
+                rows=attrs_rows,
+            )
+        )
 
     def flush(self) -> None:
         """Flush all collections to ensure data is persisted."""
@@ -258,6 +265,61 @@ class HybridMilvusIndex:
             self.model_collection.load()
         if self.caption_collection:
             self.caption_collection.load()
+
+    @staticmethod
+    def _build_row_payload(
+        schema: CollectionSchema,
+        *,
+        primary_keys: Sequence[str],
+        vectors: Sequence[Sequence[float]],
+        rows: Sequence[Dict[str, object]],
+    ) -> List[List[object]]:
+        """Build a payload aligned to the *actual* collection schema.
+
+        This makes inserts resilient to existing collections created with older schemas.
+        Unknown/missing fields are filled with empty strings / zeros as appropriate.
+        """
+        fields = list(schema.fields)
+        field_names = [field.name for field in fields]
+        missing = [name for name in ("pk", "vector") if name not in field_names]
+        if missing:
+            raise RuntimeError(f"Milvus schema is missing required fields: {missing}")
+
+        payload: List[List[object]] = []
+        for field in fields:
+            if field.name == "pk":
+                payload.append([str(pk) for pk in primary_keys])
+                continue
+            if field.name == "vector":
+                payload.append([list(vec) for vec in vectors])
+                continue
+
+            column: List[object] = []
+            for row in rows:
+                value = row.get(field.name, "")
+                if value is None:
+                    value = ""
+                if field.dtype == DataType.VARCHAR:
+                    value = str(value)
+                    max_len = getattr(field, "max_length", None)
+                    if max_len:
+                        value = value[: int(max_len)]
+                column.append(value)
+            payload.append(column)
+
+        # Helpful warning when code provides fields not present in schema (old collection).
+        extra_keys = set()
+        for row in rows:
+            extra_keys.update(row.keys())
+        extras = sorted(extra_keys - set(field_names))
+        if extras:
+            logger.warning(
+                "Milvus attrs schema has no fields %s; values will be ignored. "
+                "Drop/recreate the collection to upgrade schema.",
+                extras,
+            )
+
+        return payload
 
     def search_images(
         self,
