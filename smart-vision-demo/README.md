@@ -40,7 +40,7 @@ smart-vision-demo/
 
 2. **Milvus 준비**
    - 로컬 또는 원격 Milvus가 실행 중이어야 합니다.
-   - 기본 URI는 `http://localhost:19530`이며 필요하면 `app.py`에서 수정 가능합니다.
+   - 기본 URI는 `tcp://localhost:19530`이며 필요하면 환경변수 `MILVUS_URI`로 수정 가능합니다.
 
 3. **데모 실행**
    ```bash

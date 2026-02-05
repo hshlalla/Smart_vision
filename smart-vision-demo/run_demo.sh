@@ -29,6 +29,9 @@ if [[ ":$PYTHONPATH:" != *":$PROJECT_ROOT"* ]]; then
     export PYTHONPATH="$PYTHONPATH:$PROJECT_ROOT"
 fi
 
+# Default Milvus URI for local demo runs (docker-compose publishes 19530 on localhost).
+export MILVUS_URI="${MILVUS_URI:-tcp://localhost:19530}"
+
 # Launch the Gradio demo application
 echo "Starting Gradio demo application..."
 python app.py

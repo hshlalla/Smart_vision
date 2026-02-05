@@ -1,2 +1,67 @@
-/.history
-/.venv
+# ---------- OS / Editor ----------
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.tmp
+.idea/
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# ---------- Local history ----------
+.history/
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+.tox/
+.nox/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# ---------- Logs / runtime artifacts ----------
+*.log
+logs/
+**/logs/
+!**/logs/.gitkeep
+
+# ---------- Data / volumes (docker, milvus, minio, etc.) ----------
+volumes/
+**/volumes/
+!**/volumes/.gitkeep
+
+# ---------- Models / large artifacts ----------
+models/
+**/models/
+!**/models/.gitkeep
+!**/models/README.md
+
+# ---------- Environment / secrets ----------
+.env
+.env.*
+!.env.example
+!.env.*.example
+!.env.template
+!.env.sample
+
+# Common secret material (keep private)
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer

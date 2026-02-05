@@ -26,7 +26,9 @@ from smart_match.hybrid_search_pipeline.hybrid_pipeline_runner import (
 
 
 def _create_orchestrator() -> HybridSearchOrchestrator:
-    milvus_uri = os.getenv("MILVUS_URI", "tcp://standalone:19530")
+    # When the demo runs on the host, the docker-compose Milvus port is published on localhost.
+    # "standalone" only resolves inside the docker network created by docker compose.
+    milvus_uri = os.getenv("MILVUS_URI", "tcp://localhost:19530")
     return HybridSearchOrchestrator(
         milvus=MilvusConnectionConfig(uri=milvus_uri),
         fusion_weights=FusionWeights(alpha=0.6, beta=0.4),
