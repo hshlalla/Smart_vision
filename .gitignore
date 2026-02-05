@@ -6,3 +6,6 @@
 /false
 *.log
 *.xlsx
+*.env
+*.pyc
+volumes/
