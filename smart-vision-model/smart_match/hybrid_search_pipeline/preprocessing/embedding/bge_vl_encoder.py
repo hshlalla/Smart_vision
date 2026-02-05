@@ -50,6 +50,7 @@ class BGEVLImageEncoder:
             )
         self._model = self._load_model(model_name, trust_remote_code=trust_remote_code).to(self._device)
         self._model.eval()
+        self._ensure_position_ids()
         self.embedding_dim = self._infer_embedding_dim(embedding_dim)
         logger.info(
             "BGE-VL encoder initialized: model=%s device=%s dtype=%s embed_dim=%s",
@@ -66,6 +67,7 @@ class BGEVLImageEncoder:
         inputs = self._processor(images=image, return_tensors="pt").to(self._device)
 
         with torch.no_grad():
+            self._ensure_position_ids()
             image_features = self._model.get_image_features(**inputs)
             image_features = torch.nn.functional.normalize(image_features, p=2, dim=-1)
 
@@ -75,6 +77,47 @@ class BGEVLImageEncoder:
         logger.info("Image encoding complete: dim=%d", vector.shape[-1])
 
         return vector
+
+    def _ensure_position_ids(self) -> None:
+        """Fix broken/uninitialized position ids in some remote-code CLIP variants.
+
+        Some models (e.g. BGE-VL remote code) ship with a `position_ids` buffer that can
+        contain garbage values after deserialization, leading to `IndexError: index out of range in self`.
+        """
+        vision_model = getattr(self._model, "vision_model", None)
+        if vision_model is None:
+            return
+        embeddings = getattr(vision_model, "embeddings", None)
+        if embeddings is None:
+            return
+        pos_emb = getattr(embeddings, "position_embedding", None)
+        pos_ids = getattr(embeddings, "position_ids", None)
+        if pos_emb is None or pos_ids is None:
+            return
+
+        num_positions = int(pos_emb.weight.shape[0])
+        try:
+            pos_max = int(pos_ids.max())
+            pos_min = int(pos_ids.min())
+        except Exception:
+            pos_max = num_positions
+            pos_min = -1
+
+        if pos_max < num_positions and pos_min >= 0:
+            return
+
+        fixed = torch.arange(num_positions, dtype=torch.long, device=pos_ids.device).unsqueeze(0)
+        if getattr(pos_ids, "shape", None) == fixed.shape:
+            try:
+                pos_ids.copy_(fixed)
+                return
+            except Exception:
+                pass
+
+        try:
+            embeddings.register_buffer("position_ids", fixed, persistent=False)
+        except Exception:
+            embeddings.position_ids = fixed
 
     def _load_model(self, model_name: str, *, trust_remote_code: bool) -> torch.nn.Module:
         """Load model with dtype kwarg compatible across transformers versions."""
