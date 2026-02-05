@@ -55,7 +55,7 @@ class Qwen3VLCaptioner:
         try:
             self._processor = AutoProcessor.from_pretrained(primary_model, trust_remote_code=True)
             load_kwargs = {
-                "dtype": dtype,
+                "torch_dtype": dtype,
                 "trust_remote_code": True,
             }
             if self._device == "cuda":
@@ -73,7 +73,7 @@ class Qwen3VLCaptioner:
             self._processor = AutoProcessor.from_pretrained(fallback_model, trust_remote_code=True)
             self._model = AutoModelForVision2Seq.from_pretrained(
                 fallback_model,
-                dtype=dtype,
+                torch_dtype=dtype,
                 trust_remote_code=True,
             ).to(self._device)
             self._uses_chat_template = False

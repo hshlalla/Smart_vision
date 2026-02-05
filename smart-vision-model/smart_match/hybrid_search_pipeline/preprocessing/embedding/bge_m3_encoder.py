@@ -31,13 +31,13 @@ class BGEM3TextEncoder:
         query_instruction: str = "Represent this query for retrieving relevant documents:",
     ) -> None:
         self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self._dtype = dtype
+        self._dtype = dtype if self._device == "cuda" else torch.float32
         self.embedding_dim = embedding_dim
         self._tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=trust_remote_code)
         self._model = AutoModel.from_pretrained(
             model_name,
             trust_remote_code=trust_remote_code,
-            dtype=self._dtype,
+            torch_dtype=self._dtype,
         ).to(self._device)
         self._model.eval()
         self._doc_instruction = document_instruction.strip() if document_instruction else ""

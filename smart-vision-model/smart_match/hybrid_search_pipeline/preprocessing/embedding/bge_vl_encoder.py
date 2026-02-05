@@ -50,7 +50,7 @@ class BGEVLImageEncoder:
             )
         self._model = AutoModel.from_pretrained(
             model_name,
-            dtype=self._dtype,
+            torch_dtype=self._dtype,
             trust_remote_code=trust_remote_code,
         ).to(self._device)
         self._model.eval()
