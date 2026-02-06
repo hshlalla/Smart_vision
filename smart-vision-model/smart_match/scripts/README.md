@@ -5,6 +5,7 @@
   - 저장된 이미지 사본(`media/`)을 SHA-256으로 해시해 기존 업로드와 중복 여부를 판단합니다.
   - `--dry-run`으로 변경 예정만 확인할 수 있고, `--verbose`로 상세 로그를 확인할 수 있습니다.
   - 기본 접속 URI는 `tcp://standalone:19530`이며, `--milvus-uri`로 조정 가능합니다.
+  - `MODEL_ID`는 tracker CSV를 기준으로 하며, 별도 생성이 필요하면 오케스트레이터의 `allocate_model_id()`를 사용할 수 있습니다.
 
 #### 실행 예시
 ```bash

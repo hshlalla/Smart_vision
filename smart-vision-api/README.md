@@ -1,7 +1,8 @@
 # smart-vision-api
 
 `smart-vision-api` 디렉터리는 Smart Vision 하이브리드 검색 파이프라인을 REST API 형태로 제공하는 FastAPI 서비스입니다.  
-PaddleOCR-VL, BGE-VL, BGE-M3, Milvus를 활용해 장비 이미지와 텍스트를 동시에 검색하거나 신규 데이터를 색인할 수 있습니다.
+PaddleOCR-VL, BGE-VL, BGE-M3, Milvus를 활용해 장비 이미지와 텍스트를 동시에 검색하거나 신규 데이터를 색인할 수 있습니다.  
+또한 LangChain 기반 tool-calling 에이전트(`/api/v1/agent/chat`)를 통해 “이미지 업로드 → 제품 추정 → 웹에서 정보/가격 보강 → (옵션) Milvus 업데이트” 흐름을 제공합니다.
 
 ---
 
@@ -13,14 +14,22 @@ smart-vision-api/
 │   ├── main.py              # FastAPI 애플리케이션 엔트리포인트
 │   ├── api/
 │   │   └── v1/
-│   │       └── hybrid.py    # 하이브리드 검색 REST 엔드포인트
+│   │       ├── hybrid.py    # 하이브리드 검색 REST 엔드포인트
+│   │       ├── agent.py     # 에이전트 챗 엔드포인트
+│   │       └── auth.py      # 로그인/토큰 엔드포인트
 │   ├── core/
 │   │   ├── config.py        # 설정/환경변수 관리
+│   │   ├── auth.py          # 간단 토큰 인증(옵션)
 │   │   └── logger.py        # 공통 로거
 │   ├── schemas/
-│   │   └── payload.py       # Pydantic 요청/응답 모델
+│   │   ├── payload.py       # 하이브리드 요청/응답
+│   │   ├── agent.py         # 에이전트 요청/응답
+│   │   └── auth.py          # 로그인 요청/응답
 │   └── services/
-│       └── hybrid.py        # HybridSearchOrchestrator 서비스 래퍼
+│       ├── hybrid.py        # HybridSearchOrchestrator 서비스 래퍼
+│       ├── agent.py         # tool-calling agent
+│       ├── web_search.py    # open-world 검색(DDG HTML)
+│       └── gparts.py        # 예제 가격 소스(옵션)
 ├── docs/                    # 릴리스 노트 등 문서
 ├── logs/                    # 실행 로그 출력 디렉터리
 ├── requirements.txt         # API 의존성 목록
@@ -35,14 +44,18 @@ smart-vision-api/
 
 ## 🚀 제공 기능
 
-- **POST `/api/v1/hybrid/index`**  
-  - 이미지 + 메타데이터를 업로드하면 전처리(ocr/text/image embedding)를 수행하고 Milvus에 저장합니다.
+- **Auth (옵션)**  
+  - `GET /api/v1/auth/status`
+  - `POST /api/v1/auth/login`
+  - `GET /api/v1/auth/me`
 
-- **POST `/api/v1/hybrid/search`**  
-  - 텍스트와/또는 이미지로 하이브리드 검색을 실행합니다.
-  - 결과는 결합 점수, part number 매칭 여부 등의 필드를 포함합니다.
+- **Hybrid Search**
+  - `POST /api/v1/hybrid/index` : 이미지 + 메타데이터를 전처리 후 Milvus 저장 (`model_id` 필수)
+  - `POST /api/v1/hybrid/search` : 텍스트/이미지 하이브리드 검색
 
-엔드포인트는 `smart_match.HybridSearchOrchestrator`를 재사용하여 API와 데모가 동일한 파이프라인 위에서 동작하도록 설계되었습니다.
+- **Agent Bot (open-world + Milvus enrichment)**
+  - `POST /api/v1/agent/chat` : 이미지/질문 → (smart vision 검색 tool) → 웹 검색/가격 보강 → (옵션) Milvus 업데이트
+  - 에이전트의 “기존 모델 재사용” 기준은 `score >= 0.75` 입니다.
 
 ---
 
@@ -59,8 +72,8 @@ smart-vision-api/
    ```
 
 3. **Milvus 연결**
-   - 기본 URI는 `http://localhost:19530` 입니다.
-   - 필요 시 `.env` 또는 환경변수 `MILVUS_URI`로 수정하세요.
+   - 기본 URI는 `tcp://standalone:19530` 입니다(docker network 내부 기준).
+   - 로컬 호스트에서 실행 중인 Milvus에 붙을 때는 `tcp://localhost:19530` 를 사용하세요.
    - 로컬에서 빠르게 테스트하려면 `docker-compose up -d milvus` 를 사용할 수 있습니다.
 
 4. **API 실행**
@@ -75,13 +88,23 @@ smart-vision-api/
 
 ## 📡 API 사용 예시
 
+### 0. 로그인(옵션)
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin123"}'
+```
+
 ### 1. 자산 색인
 ```bash
 curl -X POST "http://localhost:8000/api/v1/hybrid/index" \
   -F "image=@sample.jpg" \
+  -F "model_id=a000001" \
   -F "maker=SurplusGLOBAL" \
   -F "part_number=PN-001" \
-  -F "category=ETCH"
+  -F "category=ETCH" \
+  -F "description=example"
 ```
 
 응답:
@@ -97,28 +120,21 @@ curl -X POST "http://localhost:8000/api/v1/hybrid/search" \
   -d "{
         \"query_text\": \"etch chamber\",
         \"image_base64\": \"${BASE64_IMG}\",
-        \"part_number\": \"PN-001\",
         \"top_k\": 5
       }"
 ```
 
-응답 예시:
-```json
-{
-  "results": [
-    {
-      "id": 429128221007828993,
-      "source": "image",
-      "distance": 0.21,
-      "maker": "SurplusGLOBAL",
-      "part_number": "PN-001",
-      "category": "ETCH",
-      "ocr_text": "etching chamber",
-      "fusion_score": 0.84,
-      "verified": true
-    }
-  ]
-}
+### 3. 에이전트 챗(이미지 + 질문 → 답변 + sources)
+
+```bash
+BASE64_IMG=$(base64 -w0 query.jpg)
+curl -X POST "http://localhost:8000/api/v1/agent/chat" \
+  -H "Content-Type: application/json" \
+  -d "{
+        \"message\": \"이 제품 뭐야? 가격도 찾아줘\",
+        \"image_base64\": \"${BASE64_IMG}\",
+        \"update_milvus\": true
+      }"
 ```
 
 ---
@@ -127,6 +143,7 @@ curl -X POST "http://localhost:8000/api/v1/hybrid/search" \
 
 - PaddleOCR-VL/BGE-VL/BGE-M3 모델은 최초 실행 시 자동으로 가중치를 다운로드합니다.
 - Milvus 컬렉션(`image_parts`, `text_parts`, `attrs_parts`)은 API 구동 시 자동 생성됩니다.
+- 프론트(`front/`)에서 접근하려면 CORS 설정(`CORS_ORIGINS`)이 필요할 수 있습니다.
 - 운영 배포 시에는 `scripts/run_prod.sh` 또는 Dockerfile을 활용해 주세요.
 
 ---

@@ -16,12 +16,12 @@
 - `part_number`: 대문자 변환 후 `[^0-9A-Za-z]` 제거해 순수 알파넘 값만 유지.
 - `category`: upper-case + trim.
 - `model_id`, `pk`, `description`은 문자열화 후 공백 제거해 그대로 전달.
+- (옵션) `status`, `web_text`, `price_text`도 그대로 전달(보강 정보 저장용).
 - 결과 딕셔너리는 downstream에서 필수/옵션 필드를 명확히 구분하도록 도와준다.
 
 #### `ocr/OCR.py`
 - `PaddleOCRVLPipeline`이 PaddleOCR-VL을 우선 사용하며, import 실패 시 자동으로 표준 `PaddleOCR` 인스턴스로 폴백한다.
 - `score_threshold` 이하 토큰은 버리고, 페이지/라인 단위로 정제된 `OCRToken(text, score, box)` 리스트와 `combined_text`를 만든다.
-- 경고를 주는 방법들을 생각해보는것으로 (마키나락스에서 진행하는것을 확인하고서 결정)
 - VL 모델이 반환하는 markdown 페이지와 이미지도 조합해 `markdown_text`, `markdown_images`로 노출한다.
 - `visualize()` 헬퍼로 박스/텍스트를 원본 이미지 위에 그려 디버깅 가능.
 

@@ -25,5 +25,12 @@
 
 #### 사용 시 참고
 - Milvus 스키마가 변경되면 기존 컬렉션을 드롭하고 오케스트레이터를 재생성해 새 스키마를 적용하세요.  
-- `TRACKER_DATASET_PATH`, `MEDIA_ROOT`, `MILVUS_URI` 등의 환경변수로 경로와 접속 정보를 조정할 수 있습니다.  
+- `TRACKER_DATASET_PATH`, `MEDIA_ROOT`, `MILVUS_URI`, `COUNTERS_COLLECTION` 등의 환경변수로 경로와 접속 정보를 조정할 수 있습니다.  
 - GPU 사용 여부는 PaddleOCR 및 Torch 설정에 따라 자동/수동으로 조절할 수 있습니다 (`PaddleOCRVLPipeline(use_gpu=True/False)` 등).
+
+#### model_id 할당(연번)
+- 단일 API 인스턴스 운영을 전제로, Milvus 카운터 컬렉션(`sv_counters`)을 사용해 `a000001` 같은 연번 model_id를 발급할 수 있습니다.
+- `HybridSearchOrchestrator.allocate_model_id(category=..., prefix=..., width=6)`를 사용합니다.
+
+#### 오픈월드(enrichment) 저장
+- 웹 검색/가격 등 보강 텍스트는 모델 메타데이터에 `web_text`, `price_text` 형태로 저장될 수 있습니다.

@@ -12,3 +12,6 @@
 #### 활용 패턴
 1. `TrackerDataset`으로 모델 메타를 로딩 → `HybridSearchOrchestrator.index_tracker_model()` 또는 `scripts/index_tracker_incremental.py`에서 사용.
 2. 모바일 캡처 파이프라인은 실제 서비스에서 사전 수집/검수 용도로 활용 가능하며, 저장소는 MinIO(S3 호환) 기반입니다. (가안)
+
+#### 참고
+- 신규 model_id가 필요하면 `HybridSearchOrchestrator.allocate_model_id()`를 사용해 카테고리 prefix 기반 연번 ID를 발급할 수 있습니다.

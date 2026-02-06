@@ -1,7 +1,8 @@
 # Smart Vision Demo
 
-`smart-vision-demo` 디렉터리는 하이브리드 검색 파이프라인을 직접 체험할 수 있는 **Gradio 기반 데모 앱**을 제공합니다.
-PaddleOCR-VL, BGE-VL, BGE-M3, Milvus가 결합된 파이프라인을 클릭 몇 번으로 확인할 수 있습니다.
+`smart-vision-demo` 디렉터리는 하이브리드 검색 파이프라인을 빠르게 확인하기 위한 **Gradio 기반 디버그 UI**입니다.
+
+프로덕트/사용자용 UI는 `front/`가 기본이며, Gradio는 내부 개발/디버깅 목적의 선택 사항입니다.
 
 ---
 
@@ -73,4 +74,4 @@ smart-vision-demo/
 - 새로 색인한 데이터는 Milvus 컬렉션(`image_parts`, `text_parts`, `attrs_parts`)에 저장됩니다.
 - PaddleOCR-VL 및 BGE 계열 모델은 최초 실행 시 가중치를 자동 다운로드합니다.
 
-즐거운 실험 되세요! 😊
+Tip: 실제 사용자 흐름(로그인/모바일/에이전트 챗)을 확인하려면 `front/` + `smart-vision-api`를 사용하세요.

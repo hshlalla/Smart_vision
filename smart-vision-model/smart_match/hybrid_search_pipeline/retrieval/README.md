@@ -7,6 +7,9 @@
   - `query_attributes_by_model()`로 특정 모델에 속한 모든 이미지 속성을 조회하고, `_fetch_attrs_for_hits()`는 검색 결과에서 빠른 메타 조회를 지원합니다.
   - `upsert_model()`은 모델 단위 텍스트 벡터를 갱신하기 전에 기존 행을 삭제하여 최신 정보를 유지합니다.
 
+- **`milvus_counters.py`**
+  - `sv_counters` 컬렉션에 `model_id::<prefix>` 카운터를 저장하여, 단일 인스턴스 환경에서 연번 model_id를 발급합니다.
+
 #### 인덱스 방식: HNSW + COSINE
 - **HNSW (Hierarchical Navigable Small World)**
   - 그래프 기반 근사 최근접 탐색(ANN) 구조로, 벡터를 여러 레벨의 small-world 네트워크에 배치한다.

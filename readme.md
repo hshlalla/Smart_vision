@@ -6,16 +6,17 @@ A machine learning based intelligence platform for SurplusGLOBAL Smart Vision.
 
 ```
 smart-vision/
+├── front/              # Mobile-friendly web UI (primary UI)
 ├── smart-vision-api/     # FastAPI service for model deployment
-├── smart-vision-demo/    # Gradio web interface for model demonstration
+├── smart-vision-demo/    # (Optional) Gradio UI for quick debugging
 └── smart-vision-model/   # ML model implementation and training
 ```
 
 ## Features
 
 - **Equipment Categorization**: Automated categorization of semiconductor equipment
-- **RESTful API**: FastAPI-based service for model inference
-- **Interactive Demo**: Gradio web interface for model testing
+- **RESTful API**: FastAPI-based service for hybrid search + agent bot
+- **Web Front**: Mobile-friendly UI with login + chat
 - **Production Ready**: Docker support with CUDA acceleration
 
 ## Getting Started
@@ -29,37 +30,50 @@ smart-vision/
 
 ### Installation
 
-1. Clone the repository:
+1. Create virtual environment + install packages:
 ```bash
-git clone -b PROD https://git-codecommit.ap-northeast-2.amazonaws.com/v1/repos/smart-vision
-cd smart-vision
-```
-
-2. Install dependencies:
-```bash
-# Create virtual environment
 python -m venv .venv
 source .venv/bin/activate
 
-# Install required packages
 pip install -e smart-vision-model
 pip install -e smart-vision-api
 ```
 
 ### Running the Services
- **Note:** To run the Milvus container, you must execute `run_docker.sh` first.
 
-#### API Service
+Recommended run order:
+1) Milvus (docker) → 2) API → 3) Front
+
+#### 1) Milvus (docker)
 
 ```bash
 cd smart-vision-api
-./scripts/run_docker.sh  # docker mode
-./scripts/run_dev.sh  # Development mode
-./scripts/run_prod.sh # Production mode
+./scripts/run_docker.sh
 ```
 
-#### Demo Interface
+#### 2) API Service
 
+```bash
+cd smart-vision-api
+export MILVUS_URI=tcp://localhost:19530
+export AUTH_ENABLED=true
+export AUTH_USERNAME=admin
+export AUTH_PASSWORD=admin123
+export OPENAI_API_KEY=...   # required for /api/v1/agent/chat
+
+uvicorn smart_vision_api.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+#### 3) Front (mobile-friendly)
+
+```bash
+cd front
+npm install
+echo 'VITE_API_BASE_URL=http://localhost:8000' > .env
+npm run dev -- --host
+```
+
+Optional: Gradio demo (debug only)
 ```bash
 cd smart-vision-demo
 ./run_demo.sh
@@ -85,6 +99,11 @@ docker run -d \
 | `LOG_LEVEL` | Logging level (DEBUG/INFO/WARNING/ERROR) | INFO |
 | `MODEL_DIR` | Directory for model artifacts | models |
 | `LOG_DIR` | Directory for log files | logs |
+| `MILVUS_URI` | Milvus URI | `tcp://standalone:19530` |
+| `MEDIA_ROOT` | Stored image copies (attrs image_path) | `media` |
+| `AUTH_ENABLED` | Enable login/auth | `false` |
+| `OPENAI_API_KEY` | LLM key for agent bot | (required for agent) |
+| `COUNTERS_COLLECTION` | Milvus counters collection | `sv_counters` |
 
 ## License
 

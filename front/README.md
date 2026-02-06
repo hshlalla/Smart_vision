@@ -2,6 +2,11 @@
 
 Mobile-friendly web UI (richer replacement for the Gradio demo).
 
+Screens
+- Chat: `/app/chat` (agent bot)
+- Search: `/app/search` (hybrid search)
+- Index: `/app/index` (upload + index)
+
 ## Setup
 
 ```bash
@@ -42,3 +47,5 @@ AUTH_ENABLED=true
 AUTH_USERNAME=admin
 AUTH_PASSWORD=admin123
 ```
+
+If auth is disabled (`AUTH_ENABLED=false`), the login screen shows a "continue" button.

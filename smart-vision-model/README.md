@@ -36,6 +36,9 @@ Search & Re-Ranking Layer
 각 레이어는 `smart_match/` 패키지에서 모듈화되어 있으며,
 `HybridSearchOrchestrator` 클래스로 전체 파이프라인을 실행할 수 있습니다.
 
+추가로, 단일 API 인스턴스 운영을 전제로 “카테고리 prefix 기반 연번 model_id”를 위해
+Milvus에 카운터 컬렉션(`sv_counters`)을 사용합니다.
+
 ---
 
 ## 📁 디렉터리 구조
@@ -84,11 +87,12 @@ from smart_match import HybridSearchOrchestrator
 from smart_match.hybrid_search_pipeline.hybrid_pipeline_runner import FusionWeights, MilvusConnectionConfig
 
 orchestrator = HybridSearchOrchestrator(
-    milvus=MilvusConnectionConfig(uri="http://localhost:19530"),
+    milvus=MilvusConnectionConfig(uri="tcp://localhost:19530"),
     fusion_weights=FusionWeights(alpha=0.6, beta=0.4),
 )
 
-metadata = {"maker": "SG", "part_number": "PN-001", "category": "ETCH"}
+model_id = orchestrator.allocate_model_id(category="ETCH")  # e000001 형태
+metadata = {"model_id": model_id, "maker": "SG", "part_number": "PN-001", "category": "ETCH"}
 orchestrator.preprocess_and_index("sample.jpg", metadata)
 
 results = orchestrator.search(query_text="etch chamber", top_k=5)
@@ -96,7 +100,7 @@ print(results)
 ```
 
 > **주의**  
-> - Milvus 2.4+ 인스턴스가 실행 중이어야 하며, 기본 URI는 `http://localhost:19530` 입니다.  
+> - Milvus 2.4+ 인스턴스가 실행 중이어야 하며, 기본 URI는 `tcp://localhost:19530` 입니다.  
 > - 검색 전에 최소 하나 이상의 자산을 `preprocess_and_index`로 등록해주세요.
 
 ### 2. API / 데모와 연동
