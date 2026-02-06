@@ -126,4 +126,4 @@ pip install -e ../smart-vision-model
 
 ## 🛡️ 라이선스
 
-Proprietary — SurplusGLOBAL AI Team
+Proprietary — suhun.hong

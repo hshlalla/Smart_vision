@@ -101,7 +101,7 @@ graph TD
   "ocr_score": 0.71,
   "caption_score": 0.24,
   "text_query_score": 0.00,
-  "maker": "SurplusGLOBAL",
+  "maker": "SmartVision",
   "part_number": "PN-001",
   "category": "ETCH",
   "description": "...",

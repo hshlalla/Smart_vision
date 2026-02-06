@@ -101,7 +101,7 @@ curl -X POST "http://localhost:8000/api/v1/auth/login" \
 curl -X POST "http://localhost:8000/api/v1/hybrid/index" \
   -F "image=@sample.jpg" \
   -F "model_id=a000001" \
-  -F "maker=SurplusGLOBAL" \
+  -F "maker=SmartVision" \
   -F "part_number=PN-001" \
   -F "category=ETCH" \
   -F "description=example"
@@ -150,4 +150,4 @@ curl -X POST "http://localhost:8000/api/v1/agent/chat" \
 
 ## 🤝 문의
 
-- 문의: Smart Vision AI Team
+- 문의: suhun.hong

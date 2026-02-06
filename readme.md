@@ -1,6 +1,6 @@
 # Smart Vision Project
 
-A machine learning based intelligence platform for SurplusGLOBAL Smart Vision.
+A machine learning based intelligence platform for Smart Vision.
 
 ## Project Structure
 
@@ -107,8 +107,8 @@ docker run -d \
 
 ## License
 
-Proprietary - SurplusGLOBAL AI Team
+Proprietary - suhun.hong
 
 ## Contact
 
-For questions and support, please contact the SurplusGLOBAL AI Team.
+For questions and support, please contact suhun.hong.
