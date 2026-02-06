@@ -249,6 +249,12 @@ class HybridSearchOrchestrator:
         description = metadata.get("description")
         if description:
             parts.append(description)
+        web_text = metadata.get("web_text")
+        if web_text:
+            parts.append(f"Web: {web_text}")
+        price_text = metadata.get("price_text")
+        if price_text:
+            parts.append(f"Prices: {price_text}")
         return ". ".join(part for part in parts if part).strip()
 
     @staticmethod
@@ -296,12 +302,6 @@ class HybridSearchOrchestrator:
         return "\n".join(existing_lines)
 
     def index_model_metadata(self, model_id: str, metadata: Dict[str, str]) -> Dict[str, object]:
-        payload = dict(metadata)
-        payload["model_id"] = model_id
-        normalized = self.metadata_normalizer.normalize(payload)
-        normalized["model_id"] = model_id
-        metadata_text = self._build_metadata_text(normalized)
-
         existing = self.index.get_model(
             model_id,
             output_fields=[
@@ -315,6 +315,27 @@ class HybridSearchOrchestrator:
                 "description",
             ],
         ) or {}
+        payload = dict(metadata)
+        payload["model_id"] = model_id
+
+        merged_payload = {"model_id": model_id}
+        for key in ("maker", "part_number", "category", "description"):
+            new_value = payload.get(key)
+            if new_value is not None and str(new_value).strip():
+                merged_payload[key] = str(new_value).strip()
+            else:
+                existing_value = existing.get(key)
+                if existing_value is not None and str(existing_value).strip():
+                    merged_payload[key] = str(existing_value).strip()
+
+        for key in ("status", "web_text", "price_text"):
+            new_value = payload.get(key)
+            if new_value is not None and str(new_value).strip():
+                merged_payload[key] = str(new_value).strip()
+
+        normalized = self.metadata_normalizer.normalize(merged_payload)
+        normalized["model_id"] = model_id
+        metadata_text = self._build_metadata_text(normalized)
         ocr_text = existing.get("ocr_text", "")
         caption_text = existing.get("caption_text", "")
         logger.debug("Indexing model metadata: model_id=%s, metadata_text_len=%d, existing_ocr_len=%d",
@@ -327,10 +348,10 @@ class HybridSearchOrchestrator:
             "metadata_text": metadata_text,
             "ocr_text": ocr_text,
             "caption_text": caption_text,
-            "maker": normalized.get("maker", existing.get("maker", "")),
-            "part_number": normalized.get("part_number", existing.get("part_number", "")),
-            "category": normalized.get("category", existing.get("category", "")),
-            "description": normalized.get("description", existing.get("description", "")),
+            "maker": normalized.get("maker") or existing.get("maker", ""),
+            "part_number": normalized.get("part_number") or existing.get("part_number", ""),
+            "category": normalized.get("category") or existing.get("category", ""),
+            "description": normalized.get("description") or existing.get("description", ""),
         }
 
         self.index.upsert_model(model_id=model_id, text_vector=vector, extra_values=extra_values)

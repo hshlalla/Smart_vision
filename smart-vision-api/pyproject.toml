@@ -20,7 +20,11 @@ dependencies = [
     "pymilvus==2.5.10",
     "pymilvus[model]",
     "pymilvus[bulk_writer]",
-    "python-multipart==0.0.20"
+    "python-multipart==0.0.20",
+    "requests>=2.32.0",
+    "beautifulsoup4>=4.12.0",
+    "langchain>=0.3.0",
+    "langchain-openai>=0.2.0"
 ]
 
 
