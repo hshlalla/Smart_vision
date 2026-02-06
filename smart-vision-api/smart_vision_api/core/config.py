@@ -58,6 +58,14 @@ class Settings(BaseSettings):
     RETRIEVER_DEVICE: str = "auto"
     MILVUS_URI: str = "tcp://standalone:19530"  # Default Milvus URI
 
+    # CORS (for front-end access)
+    CORS_ORIGINS: str = "*"  # comma-separated origins or "*"
+
+    # Simple token auth (optional)
+    AUTH_ENABLED: bool = False
+    AUTH_USERNAME: str = "admin"
+    AUTH_PASSWORD: str = "admin123"
+    AUTH_TOKEN_TTL_SECONDS: int = 60 * 60 * 24  # 24h
 
     # Equipment and parts categories
     EQUIPMENTS_CATEGORY: List[str] = [
@@ -172,6 +180,13 @@ class Settings(BaseSettings):
 
         # Default behavior for "auto" setting
         return "cuda" if torch.cuda.is_available() else "cpu"
+
+    @property
+    def cors_origins_list(self) -> List[str]:
+        value = (self.CORS_ORIGINS or "").strip()
+        if not value or value == "*":
+            return ["*"]
+        return [item.strip() for item in value.split(",") if item.strip()]
 
 
 # Initialize global settings

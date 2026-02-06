@@ -8,8 +8,9 @@ Endpoints:
 
 from __future__ import annotations
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
+from ...core.auth import require_user
 from ...services.hybrid import hybrid_service
 from ...schemas.payload import HybridIndexResponse, HybridSearchRequest, HybridSearchResponse
 
@@ -22,16 +23,21 @@ router = APIRouter(prefix="/hybrid", tags=["Hybrid Search"])
     description="Runs preprocessing (OCR + embeddings) and stores the result in Milvus.",
 )
 async def index_asset(
+    _username: str = Depends(require_user),
     image: UploadFile = File(..., description="Equipment photo"),
+    model_id: str = Form(..., description="Model ID"),
     maker: str = Form("", description="Maker metadata"),
     part_number: str = Form("", description="Part number metadata"),
     category: str = Form("", description="Category metadata"),
+    description: str = Form("", description="Optional description"),
 ) -> HybridIndexResponse:
     try:
         metadata = {
+            "model_id": model_id,
             "maker": maker,
             "part_number": part_number,
             "category": category,
+            "description": description,
         }
         result = hybrid_service.index_asset(image, metadata)
         return HybridIndexResponse(**result)
@@ -44,7 +50,10 @@ async def index_asset(
     response_model=HybridSearchResponse,
     summary="Hybrid multimodal search",
 )
-async def search(request: HybridSearchRequest) -> HybridSearchResponse:
+async def search(
+    request: HybridSearchRequest,
+    _username: str = Depends(require_user),
+) -> HybridSearchResponse:
     try:
         results = hybrid_service.search(
             query_text=request.query_text,

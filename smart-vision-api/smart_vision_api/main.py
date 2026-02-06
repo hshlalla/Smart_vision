@@ -25,9 +25,10 @@ System Features:
 from typing import Dict
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .api.v1 import hybrid
+from .api.v1 import agent, auth, hybrid
 from .core.config import settings
 from .core.logger import get_logger
 
@@ -44,9 +45,28 @@ app = FastAPI(
     openapi_url="/api/openapi.json",
 )
 
+# CORS for the web front-end
+origins = settings.cors_origins_list
+allow_credentials = False if origins == ["*"] else True
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=allow_credentials,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Register route handlers
 app.include_router(
     hybrid.router,
+    prefix=settings.API_PREFIX,
+)
+app.include_router(
+    auth.router,
+    prefix=settings.API_PREFIX,
+)
+app.include_router(
+    agent.router,
     prefix=settings.API_PREFIX,
 )
 

@@ -18,8 +18,11 @@ ENV/
 # ---------- Data / outputs ----------
 /data/
 /media/
-/dataset/
+/dataset/*
+!/dataset/*.py
+!/dataset/*.md
 /false/
+media/
 
 # ---------- Python ----------
 __pycache__/
