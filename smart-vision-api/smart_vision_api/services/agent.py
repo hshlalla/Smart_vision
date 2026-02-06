@@ -1,14 +1,13 @@
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
 
 from ..core.config import settings
@@ -58,23 +57,25 @@ class _ImageStore:
 
 
 class SmartVisionAgentService:
-    """LangChain tool-calling agent that can do retrieval + price lookup."""
+    """Tool-calling agent for retrieval + open-world enrichment.
+
+    Uses langchain_openai tool-calling with a lightweight control loop (no
+    dependency on langchain.agents public API, which is version-volatile).
+    """
 
     def __init__(self) -> None:
         self._image_store = _ImageStore()
-        self._executor: Optional[AgentExecutor] = None
 
     def put_image(self, image_base64: str) -> str:
         return self._image_store.put(image_base64)
 
-    def _build_executor(self) -> AgentExecutor:
+    def _require_openai_key(self) -> None:
         import os
 
         if not os.getenv("OPENAI_API_KEY"):
             raise RuntimeError("OPENAI_API_KEY is not set. Configure it to use the agent.")
 
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2, timeout=60)
-
+    def _build_tools(self, *, allow_updates: bool):
         @tool("hybrid_search")
         def hybrid_search(request_id: str = "", query_text: str = "", top_k: int = 5) -> list[dict[str, Any]]:
             """Run Smart Vision hybrid search. Use request_id if the user provided an image."""
@@ -128,19 +129,45 @@ class SmartVisionAgentService:
             """Extract price mentions from a text blob (snippets/pages)."""
             return extract_price_mentions(text)
 
-        @tool("update_milvus_enrichment")
-        def update_milvus_enrichment(model_id: str, web_text: str = "", price_text: str = "") -> dict[str, Any]:
-            """Persist enriched info back into Milvus (updates model metadata_text vector)."""
+        @tool("allocate_model_id")
+        def allocate_model_id(category: str = "", prefix: str = "", width: int = 6) -> dict[str, Any]:
+            """Allocate a new sequential model_id (e.g., a000001) by category prefix."""
+            category = (category or "").strip()
+            prefix = (prefix or "").strip()
+            model_id = hybrid_service.orchestrator.allocate_model_id(category=category or None, prefix=prefix or None, width=int(width or 6))
+            return {"model_id": model_id}
+
+        @tool("upsert_model_metadata")
+        def upsert_model_metadata(
+            model_id: str,
+            maker: str = "",
+            part_number: str = "",
+            category: str = "",
+            description: str = "",
+            web_text: str = "",
+            price_text: str = "",
+        ) -> dict[str, Any]:
+            """Create/update a model record in Milvus with enriched metadata fields."""
+            if not allow_updates:
+                return {"error": "milvus updates disabled for this request"}
             model_id = (model_id or "").strip()
             if not model_id:
                 return {"error": "model_id required"}
             payload: Dict[str, str] = {"model_id": model_id}
-            if web_text and web_text.strip():
+            if maker.strip():
+                payload["maker"] = maker.strip()
+            if part_number.strip():
+                payload["part_number"] = part_number.strip()
+            if category.strip():
+                payload["category"] = category.strip()
+            if description.strip():
+                payload["description"] = description.strip()
+            if web_text.strip():
                 payload["web_text"] = web_text.strip()[:6000]
-            if price_text and price_text.strip():
+            if price_text.strip():
                 payload["price_text"] = price_text.strip()[:1000]
             row = hybrid_service.orchestrator.index_model_metadata(model_id, payload)
-            return {"status": "updated", "model_id": model_id, "stored": bool(row)}
+            return {"status": "upserted", "model_id": model_id, "stored": bool(row)}
 
         @tool("gparts_search_prices")
         def gparts_search_prices(keyword: str, max_results: int = 5) -> list[dict[str, Any]]:
@@ -159,41 +186,16 @@ class SmartVisionAgentService:
                 for it in items
             ]
 
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    "You are Smart Vision, a Korean assistant for identifying parts from an uploaded image and answering questions.\n"
-                    "Use tools when needed:\n"
-                    "- If the user provided an image, first call hybrid_search with request_id.\n"
-                    "- If hybrid_search returns no good candidates, call vision_identify.\n"
-                    "- For open-world info/price, use web_search then extract_prices on snippets.\n"
-                    "- Only if update_milvus=true AND you used web info AND you have a model_id from hybrid_search, call update_milvus_enrichment to persist.\n"
-                    "- gparts_search_prices is only an example source; prefer web_search unless the user explicitly asks for gparts.\n"
-                    "Be honest about uncertainty. Ask a short follow-up question when ambiguous.\n"
-                    "When you use web_search results, include 2-5 sources (title + url) at the end.\n"
-                    "Return concise, practical answers in Korean.\n",
-                ),
-                ("human", "request_id={request_id}\nupdate_milvus={update_milvus}\nmax_tool_results={max_tool_results}\n\nUser: {input}"),
-                ("placeholder", "{agent_scratchpad}"),
-            ]
-        )
-
-        tools = [hybrid_search, vision_identify, web_search, extract_prices, update_milvus_enrichment, gparts_search_prices]
-        agent = create_tool_calling_agent(llm, tools, prompt)
-        return AgentExecutor(
-            agent=agent,
-            tools=tools,
-            verbose=False,
-            max_iterations=6,
-            return_intermediate_steps=True,
-        )
-
-    @property
-    def executor(self) -> AgentExecutor:
-        if self._executor is None:
-            self._executor = self._build_executor()
-        return self._executor
+        tools = [
+            hybrid_search,
+            vision_identify,
+            web_search,
+            extract_prices,
+            allocate_model_id,
+            upsert_model_metadata,
+            gparts_search_prices,
+        ]
+        return tools
 
     async def chat(
         self,
@@ -203,16 +205,66 @@ class SmartVisionAgentService:
         max_tool_results: int,
         update_milvus: bool,
     ) -> Dict[str, Any]:
-        # max_tool_results currently enforced inside tools; keep for future shaping
-        result = await self.executor.ainvoke(
-            {
-                "input": message,
-                "request_id": request_id,
-                "update_milvus": bool(update_milvus),
-                "max_tool_results": int(max_tool_results),
-            }
+        self._require_openai_key()
+
+        allow_updates = bool(update_milvus)
+        tools = self._build_tools(allow_updates=allow_updates)
+        tool_map = {t.name: t for t in tools}
+
+        system_prompt = (
+            "You are Smart Vision, a Korean assistant for identifying parts from an uploaded image and answering questions.\n"
+            "You have tools:\n"
+            "- hybrid_search(request_id, query_text, top_k)\n"
+            "- vision_identify(request_id)\n"
+            "- web_search(query, max_results)\n"
+            "- extract_prices(text)\n"
+            "- allocate_model_id(category, prefix, width)\n"
+            "- upsert_model_metadata(model_id, maker, part_number, category, description, web_text, price_text)\n"
+            "- gparts_search_prices(keyword, max_results)  (example source)\n\n"
+            f"request_id={request_id}\n"
+            f"update_milvus={'true' if allow_updates else 'false'}\n\n"
+            "Rules:\n"
+            "1) If an image is provided, call hybrid_search first. If no good match, call vision_identify.\n"
+            "2) For open-world info/price, use web_search and extract_prices.\n"
+            "3) If there's no model_id (no match) and update_milvus=true, allocate_model_id by category prefix and upsert_model_metadata.\n"
+            "4) If you used web_search, include 2-5 sources (title + url) at the end.\n"
+            "Be honest about uncertainty.\n"
         )
-        return result
+
+        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2, timeout=60).bind_tools(tools)
+        messages = [SystemMessage(content=system_prompt), HumanMessage(content=message)]
+
+        intermediate_steps = []
+        max_iters = 6
+        for _ in range(max_iters):
+            ai = llm.invoke(messages)
+            messages.append(ai)
+            tool_calls = getattr(ai, "tool_calls", None) or []
+            if not tool_calls:
+                break
+            for call in tool_calls:
+                name = call.get("name")
+                args = call.get("args") or {}
+                tool_call_id = call.get("id")
+                tool_obj = tool_map.get(name)
+                if tool_obj is None:
+                    obs = {"error": f"unknown tool: {name}"}
+                else:
+                    try:
+                        obs = tool_obj.invoke(args)
+                    except Exception as exc:
+                        obs = {"error": str(exc)}
+                intermediate_steps.append({"tool": name, "args": args, "observation": obs})
+                messages.append(ToolMessage(content=json.dumps(obs, ensure_ascii=False), tool_call_id=tool_call_id))
+
+        output_text = ""
+        # The last message should be an AIMessage with final content.
+        for m in reversed(messages):
+            if hasattr(m, "content") and isinstance(m.content, str) and m.content.strip():
+                output_text = m.content.strip()
+                break
+
+        return {"output": output_text, "intermediate_steps": intermediate_steps}
 
 
 agent_service = SmartVisionAgentService()

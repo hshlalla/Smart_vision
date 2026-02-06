@@ -32,6 +32,7 @@ from .preprocessing.metadata_normalizer import MetadataNormalizer
 from .preprocessing.ocr.OCR import PaddleOCRVLPipeline
 from .preprocessing.pipeline import PreprocessingPipeline
 from .retrieval.milvus_hybrid_index import CollectionConfig, FieldSpec, HybridMilvusIndex
+from .retrieval.milvus_counters import MilvusCounterStore
 from .search.fusion_retriever import FusionWeights, HybridFusionRetriever
 
 logger = logging.getLogger(__name__)
@@ -85,6 +86,9 @@ class HybridSearchOrchestrator:
         self._image_pk_counters: Dict[str, int] = {}
         self._tracker_dataset_path = Path(tracker_dataset_path).expanduser().resolve() if tracker_dataset_path else None
         self._tracker_dataset: TrackerDataset | None = None
+
+        counters_collection = os.getenv("COUNTERS_COLLECTION", "sv_counters")
+        self.counters = MilvusCounterStore(collection_name=counters_collection)
 
         media_root_env = os.getenv("MEDIA_ROOT", "media")
         self.media_root = Path(media_root_env).expanduser().resolve()
@@ -525,6 +529,35 @@ class HybridSearchOrchestrator:
         )
         logger.info("Completed indexing: model_id=%s, image_pk=%s, tokens=%d",
                     model_id, primary_key, len(record.ocr_tokens))
+
+    @staticmethod
+    def _prefix_from_category(category: str | None) -> str:
+        value = (category or "").strip().lower()
+        for ch in value:
+            if ch.isalnum():
+                return ch
+        return "a"
+
+    def allocate_model_id(
+        self,
+        *,
+        category: str | None = None,
+        prefix: str | None = None,
+        width: int = 6,
+    ) -> str:
+        """Allocate a sequential model_id like 'a000001' based on a prefix.
+
+        Designed for single-writer deployments (one API instance).
+        """
+        width = int(width)
+        if width < 3 or width > 12:
+            raise ValueError("width must be between 3 and 12.")
+
+        prefix_value = (prefix or "").strip().lower() or self._prefix_from_category(category)
+        prefix_value = prefix_value[:8]
+        counter_key = f"model_id::{prefix_value}"
+        counter = self.counters.next(counter_key)
+        return f"{prefix_value}{counter.value:0{width}d}"
 
     def _ensure_tracker_dataset(self, dataset_path: str | Path | None = None) -> TrackerDataset:
         if dataset_path:

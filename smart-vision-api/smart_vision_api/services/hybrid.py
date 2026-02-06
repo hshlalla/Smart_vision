@@ -32,15 +32,19 @@ class HybridSearchService:
     """Lazy-initialized orchestrator wrapper for API usage."""
 
     def __init__(self) -> None:
-        logger.info("Initializing HybridSearchOrchestrator for API service...")
-        self._orchestrator = HybridSearchOrchestrator(
-            milvus=MilvusConnectionConfig(uri=settings.MILVUS_URI),
-            fusion_weights=FusionWeights(alpha=0.5, beta=0.3, gamma=0.2),
-        )
-        logger.info("HybridSearchOrchestrator ready.")
+        self._orchestrator: HybridSearchOrchestrator | None = None
+        self._milvus_config = MilvusConnectionConfig(uri=settings.MILVUS_URI)
+        self._fusion_weights = FusionWeights(alpha=0.5, beta=0.3, gamma=0.2)
 
     @property
     def orchestrator(self) -> HybridSearchOrchestrator:
+        if self._orchestrator is None:
+            logger.info("Initializing HybridSearchOrchestrator for API service...")
+            self._orchestrator = HybridSearchOrchestrator(
+                milvus=self._milvus_config,
+                fusion_weights=self._fusion_weights,
+            )
+            logger.info("HybridSearchOrchestrator ready.")
         return self._orchestrator
 
     def index_asset(self, image: UploadFile, metadata: Dict[str, str]) -> Dict[str, str]:
@@ -57,7 +61,7 @@ class HybridSearchService:
         enriched_metadata["pk"] = f"{model_id}::api_{uuid.uuid4().hex[:8]}"
 
         try:
-            self._orchestrator.preprocess_and_index(tmp_path, enriched_metadata)
+            self.orchestrator.preprocess_and_index(tmp_path, enriched_metadata)
         finally:
             tmp_path.unlink(missing_ok=True)
 
@@ -67,7 +71,7 @@ class HybridSearchService:
         model_id = str(metadata.get("model_id", "")).strip()
         if not model_id:
             raise ValueError("metadata must include 'model_id'.")
-        self._orchestrator.index_model_metadata(model_id, metadata)
+        self.orchestrator.index_model_metadata(model_id, metadata)
         return {"status": "registered"}
 
     def search(
@@ -86,7 +90,7 @@ class HybridSearchService:
                 tmp.write(image_bytes)
                 image_path = Path(tmp.name)
         try:
-            results = self._orchestrator.search(
+            results = self.orchestrator.search(
                 query_image=image_path,
                 query_text=query_text,
                 top_k=top_k,

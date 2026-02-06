@@ -12,10 +12,11 @@ def _extract_sources(debug: dict) -> list[dict[str, str]]:
     sources: list[dict[str, str]] = []
     steps = debug.get("intermediate_steps") or []
     for step in steps:
-        # step may be (action, observation)
-        obs = None
-        if isinstance(step, (list, tuple)) and len(step) >= 2:
-            obs = step[1]
+        if not isinstance(step, dict):
+            continue
+        if step.get("tool") != "web_search":
+            continue
+        obs = step.get("observation")
         if isinstance(obs, list):
             for item in obs:
                 if not isinstance(item, dict):
@@ -40,13 +41,14 @@ def _extract_identified(debug: dict) -> dict:
     steps = debug.get("intermediate_steps") or []
     best: dict = {}
     for step in steps:
-        obs = None
-        if isinstance(step, (list, tuple)) and len(step) >= 2:
-            obs = step[1]
-        # hybrid_search returns list[dict]
+        if not isinstance(step, dict):
+            continue
+        if step.get("tool") != "hybrid_search":
+            continue
+        obs = step.get("observation")
         if isinstance(obs, list) and obs and isinstance(obs[0], dict) and "model_id" in obs[0]:
             best = obs[0]
-            break
+            return best
     return best
 
 
