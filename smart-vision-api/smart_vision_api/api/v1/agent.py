@@ -46,9 +46,12 @@ def _extract_identified(debug: dict) -> dict:
         if step.get("tool") != "hybrid_search":
             continue
         obs = step.get("observation")
-        if isinstance(obs, list) and obs and isinstance(obs[0], dict) and "model_id" in obs[0]:
-            best = obs[0]
-            return best
+        if isinstance(obs, dict):
+            if not obs.get("good_match"):
+                return {}
+            results = obs.get("results")
+            if isinstance(results, list) and results and isinstance(results[0], dict) and "model_id" in results[0]:
+                return results[0]
     return best
 
 

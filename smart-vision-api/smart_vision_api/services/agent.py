@@ -76,19 +76,37 @@ class SmartVisionAgentService:
             raise RuntimeError("OPENAI_API_KEY is not set. Configure it to use the agent.")
 
     def _build_tools(self, *, allow_updates: bool):
+        match_threshold = 0.75
+
         @tool("hybrid_search")
-        def hybrid_search(request_id: str = "", query_text: str = "", top_k: int = 5) -> list[dict[str, Any]]:
-            """Run Smart Vision hybrid search. Use request_id if the user provided an image."""
+        def hybrid_search(request_id: str = "", query_text: str = "", top_k: int = 5) -> dict[str, Any]:
+            """Run Smart Vision hybrid search. Use request_id if the user provided an image.
+
+            The agent should treat matches as "good" only when top score >= 0.75.
+            """
             image_b64 = None
             rid = (request_id or "").strip()
             if rid:
                 image_b64 = self._image_store.get(rid)
                 if image_b64 is None:
-                    return [{"error": "image request_id not found or expired"}]
+                    return {"error": "image request_id not found or expired", "good_match": False, "results": []}
             q = (query_text or "").strip() or None
             top_k = int(top_k or 5)
             top_k = max(1, min(20, top_k))
-            return hybrid_service.search(query_text=q, image_b64=image_b64, top_k=top_k, part_number=None)
+            results = hybrid_service.search(query_text=q, image_b64=image_b64, top_k=top_k, part_number=None)
+            top_score = None
+            if isinstance(results, list) and results and isinstance(results[0], dict):
+                try:
+                    top_score = float(results[0].get("score")) if results[0].get("score") is not None else None
+                except (TypeError, ValueError):
+                    top_score = None
+            good_match = bool(top_score is not None and top_score >= match_threshold)
+            return {
+                "threshold": match_threshold,
+                "good_match": good_match,
+                "top_score": top_score,
+                "results": results,
+            }
 
         @tool("vision_identify")
         def vision_identify(request_id: str) -> dict[str, Any]:
@@ -224,7 +242,7 @@ class SmartVisionAgentService:
             f"request_id={request_id}\n"
             f"update_milvus={'true' if allow_updates else 'false'}\n\n"
             "Rules:\n"
-            "1) If an image is provided, call hybrid_search first. If no good match, call vision_identify.\n"
+            "1) If an image is provided, call hybrid_search first. Treat it as a match only if good_match=true (threshold=0.75). If no good match, call vision_identify.\n"
             "2) For open-world info/price, use web_search and extract_prices.\n"
             "3) If there's no model_id (no match) and update_milvus=true, allocate_model_id by category prefix and upsert_model_metadata.\n"
             "4) If you used web_search, include 2-5 sources (title + url) at the end.\n"
