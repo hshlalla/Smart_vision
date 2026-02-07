@@ -5,12 +5,20 @@ A machine learning based intelligence platform for Smart Vision.
 ## Project Structure
 
 ```
-smart-vision/
-├── front/              # Mobile-friendly web UI (primary UI)
-├── smart-vision-api/     # FastAPI service for model deployment
-├── smart-vision-demo/    # (Optional) Gradio UI for quick debugging
-└── smart-vision-model/   # ML model implementation and training
+Smart_vision/
+├── apps/
+│   ├── web                              # Mobile-friendly web UI (primary UI)
+│   ├── api                              # FastAPI service (hybrid search + agent + catalog RAG)
+│   └── demo                             # (Optional) Gradio UI for quick debugging
+├── packages/
+│   └── model                            # ML/search pipeline package
+├── data/
+│   └── raw                              # Dataset root
+└── docs/
+    └── PROJECT_STRUCTURE.md            # Structure and navigation guide
 ```
+
+Use canonical paths only (`apps/*`, `packages/*`, `data/*`).
 
 ## Features
 
@@ -35,8 +43,8 @@ smart-vision/
 python -m venv .venv
 source .venv/bin/activate
 
-pip install -e smart-vision-model
-pip install -e smart-vision-api
+pip install -e packages/model
+pip install -e apps/api
 ```
 
 ### Running the Services
@@ -47,14 +55,14 @@ Recommended run order:
 #### 1) Milvus (docker)
 
 ```bash
-cd smart-vision-api
+cd apps/api
 ./scripts/run_docker.sh
 ```
 
 #### 2) API Service
 
 ```bash
-cd smart-vision-api
+cd apps/api
 export MILVUS_URI=tcp://localhost:19530
 export AUTH_ENABLED=true
 export AUTH_USERNAME=admin
@@ -67,7 +75,7 @@ uvicorn smart_vision_api.main:app --reload --host 0.0.0.0 --port 8000
 #### 3) Front (mobile-friendly)
 
 ```bash
-cd front
+cd apps/web
 npm install
 echo 'VITE_API_BASE_URL=http://localhost:8000' > .env
 npm run dev -- --host
@@ -75,14 +83,14 @@ npm run dev -- --host
 
 Optional: Gradio demo (debug only)
 ```bash
-cd smart-vision-demo
+cd apps/demo
 ./run_demo.sh
 ```
 
 ## Docker Deployment
 
 ```bash
-cd smart-vision-api
+cd apps/api
 docker build -t smart-vision-api:latest .
 docker run -d \
     --name smart-vision-api \
