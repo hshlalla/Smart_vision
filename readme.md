@@ -31,7 +31,7 @@ Use canonical paths only (`apps/*`, `packages/*`, `data/*`).
 
 ### Prerequisites
 
-- Python 3.12.3 or higher
+- Python 3.11 or higher
 - CUDA 12.6.3 (for GPU support)
 - Docker 24.0.0 or higher
 - transformers == 4.51.x 

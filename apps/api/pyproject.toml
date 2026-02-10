@@ -7,7 +7,7 @@ name = "smart_vision_api"
 version = "1.0.0"
 description = "FastAPI service for Smart Vision machine learning models and predictions"
 readme = "README.md"
-requires-python = ">=3.12.3"
+requires-python = ">=3.11"
 license = {file = "LICENSE"}
 authors = [
     {name = "suhun.hong"}
@@ -40,4 +40,4 @@ include = ["smart_vision_api*"]
 
 [tool.black]
 line-length = 88
-target-version = ["py312"]
+target-version = ["py311", "py312"]

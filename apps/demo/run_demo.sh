@@ -38,9 +38,9 @@ fi
 # Configure Python environment
 # Ensure the project root is in PYTHONPATH for module imports
 PROJECT_ROOT="$(pwd)"
-if [[ ":$PYTHONPATH:" != *":$PROJECT_ROOT"* ]]; then
+if [[ ":${PYTHONPATH:-}:" != *":$PROJECT_ROOT"* ]]; then
     echo "Adding project root to PYTHONPATH: $PROJECT_ROOT"
-    export PYTHONPATH="$PYTHONPATH:$PROJECT_ROOT"
+    export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}$PROJECT_ROOT"
 fi
 
 # Default Milvus URI for local demo runs.

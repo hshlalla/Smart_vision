@@ -40,6 +40,9 @@ class MilvusCounterStore:
             ),
             FieldSchema(name="value", dtype=DataType.INT64),
             FieldSchema(name="updated_at", dtype=DataType.INT64),
+            # Milvus 2.6+ may reject schemas without any vector field.
+            # Keep a tiny placeholder vector to satisfy schema checks.
+            FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=2),
         ]
         return CollectionSchema(fields, description=f"{name} counters")
 
@@ -55,6 +58,24 @@ class MilvusCounterStore:
                 )
             return collection
         return Collection(name=name, schema=self._schema(name))
+
+    @staticmethod
+    def _build_insert_payload(collection: Collection, key: str, value: int, updated_at: int):
+        """Build insert payload aligned to existing collection schema."""
+        payload = []
+        for field in collection.schema.fields:
+            if field.name == "key":
+                payload.append([key])
+            elif field.name == "value":
+                payload.append([value])
+            elif field.name == "updated_at":
+                payload.append([updated_at])
+            elif field.dtype in (DataType.FLOAT_VECTOR, DataType.BINARY_VECTOR):
+                payload.append([[0.0, 0.0]])
+            else:
+                # Fallback for unexpected optional fields.
+                payload.append([""])
+        return payload
 
     def get(self, key: str) -> Optional[CounterValue]:
         key = (key or "").strip()
@@ -82,7 +103,7 @@ class MilvusCounterStore:
             self.collection.delete(expr=f'key == "{safe}"')
         except Exception:
             pass
-        self.collection.insert([[key], [value], [updated_at]])
+        self.collection.insert(self._build_insert_payload(self.collection, key, value, updated_at))
         try:
             self.collection.flush()
         except Exception:
@@ -96,4 +117,3 @@ class MilvusCounterStore:
 
 
 __all__ = ["CounterValue", "MilvusCounterStore"]
-

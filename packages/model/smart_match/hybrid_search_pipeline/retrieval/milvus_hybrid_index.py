@@ -159,6 +159,9 @@ class HybridMilvusIndex:
 
     def create_indexes(self) -> None:
         """Create vector indexes for the embeddings collections."""
+        self._assert_vector_field(self.image_collection, "image")
+        self._assert_vector_field(self.text_collection, "text")
+        self._assert_vector_field(self.attrs_collection, "attrs")
         self.image_collection.create_index(
             field_name="vector",
             index_params={
@@ -183,6 +186,7 @@ class HybridMilvusIndex:
             },
         )
         if self.model_collection and self._model_cfg:
+            self._assert_vector_field(self.model_collection, "model")
             self.model_collection.create_index(
                 field_name="vector",
                 index_params={
@@ -192,6 +196,7 @@ class HybridMilvusIndex:
                 },
             )
         if self.caption_collection and self._caption_cfg:
+            self._assert_vector_field(self.caption_collection, "caption")
             self.caption_collection.create_index(
                 field_name="vector",
                 index_params={
@@ -200,6 +205,20 @@ class HybridMilvusIndex:
                     "params": {"efConstruction": self._caption_cfg.ef_construction, "M": self._caption_cfg.M},
                 },
             )
+
+    @staticmethod
+    def _assert_vector_field(collection: Collection, label: str) -> None:
+        """Fail fast with schema details when a collection has no vector field."""
+        fields = list(collection.schema.fields)
+        vector_fields = [field for field in fields if field.dtype in (DataType.FLOAT_VECTOR, DataType.BINARY_VECTOR)]
+        if vector_fields:
+            return
+        field_desc = ", ".join(f"{field.name}:{field.dtype}" for field in fields)
+        raise RuntimeError(
+            f"Milvus '{label}' collection '{collection.name}' has no vector field. "
+            f"Current schema fields: [{field_desc}]. "
+            "Drop/recreate conflicting collections and ensure COUNTERS_COLLECTION does not reuse vector collection names."
+        )
 
     def insert(
         self,

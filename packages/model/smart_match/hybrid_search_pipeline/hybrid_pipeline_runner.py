@@ -90,6 +90,19 @@ class HybridSearchOrchestrator:
         self._tracker_dataset: TrackerDataset | None = None
 
         counters_collection = os.getenv("COUNTERS_COLLECTION", "sv_counters")
+        reserved_collection_names = {
+            image_collection,
+            text_collection,
+            attrs_collection,
+            model_collection,
+            "caption_parts",
+            "catalog_chunks",
+        }
+        if counters_collection in reserved_collection_names:
+            raise ValueError(
+                f"COUNTERS_COLLECTION '{counters_collection}' conflicts with data collections. "
+                f"Choose a dedicated counter collection name (e.g. 'sv_counters')."
+            )
         self.counters = MilvusCounterStore(collection_name=counters_collection)
 
         media_root_env = os.getenv("MEDIA_ROOT", "media")
