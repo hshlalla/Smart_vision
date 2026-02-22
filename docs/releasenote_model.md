@@ -1,6 +1,17 @@
 Smart Vision Model Release Notes
 ================================
 
+## 2.1.0
+
+### Added
+- 모델 패키지 테스트를 추가했습니다.
+- `packages/model/tests/test_metadata_normalizer.py`
+- `packages/model/tests/test_tracker_dataset.py`
+- 커버 범위: 메타 정규화 규칙, `None` 필드 처리, tracker CSV 파싱/필수 컬럼 검증/조회 동작
+
+### Changed
+- 모델 런타임 동작 변경은 없고, 회귀 방지용 테스트 체계를 보강했습니다.
+
 ## 2.0.0
 
 ### Added

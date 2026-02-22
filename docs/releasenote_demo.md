@@ -1,6 +1,11 @@
 Smart Vision Demo Release Notes
 ===============================
 
+## 2.1.0
+
+### Changed
+- 이번 배포에서는 `apps/demo` 런타임 코드 변경은 없고, API/Model 안정화 작업에 맞춰 릴리즈노트 기준 버전을 동기화했습니다.
+
 ## 2.0.0
 
 ### Added

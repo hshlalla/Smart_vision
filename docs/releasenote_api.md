@@ -1,6 +1,28 @@
 Smart Vision API Release Notes
 ===============================
 
+## 2.1.0
+
+### Added
+- `POST /api/v1/agent/chat` 요청 로깅을 강화했습니다.
+- 이미지 포함 여부(`has_image`), base64 길이, 메시지 길이, 생성된 `request_id`, tool 실행 단계 수를 로그로 확인할 수 있습니다.
+- `POST /api/v1/hybrid/search`, `POST /api/v1/hybrid/index`에도 수신/완료/실패 로그를 추가했습니다.
+- API 테스트를 추가했습니다.
+- `apps/api/tests/test_agent_chat_api.py`
+- 커버 범위: source dedupe, catalog evidence 보강, 이미지 request_id 전달, 예외 시 500 detail 반환
+
+### Changed
+- Agent 오케스트레이션을 보강했습니다.
+- 이미지가 업로드된 턴에서 LLM이 tool-call을 생략하면 `hybrid_search`를 1회 fallback 실행하도록 변경했습니다.
+- `request_id`가 존재하는 턴에서는 이미지 재업로드를 요구하지 않도록 system rule을 강화했습니다.
+- 실행 문서를 `run_dev.sh` 중심으로 갱신했습니다.
+- `.env` 자동 로딩 기준으로 수동 `export` 없이 실행 가능하도록 안내를 정리했습니다.
+
+### Fixed
+- `.env` 로딩 방식을 `export $(grep ... | xargs)`에서 `source` 기반으로 변경해 공백/인용 값 파싱 리스크를 줄였습니다.
+- `run_prod.sh`의 `PYTHONPATH` unbound 종료 가능성을 제거했습니다.
+- `run_docker.sh`의 `IMAGE_NAME`, `CONTAINER_NAME` 미정의 종료 가능성에 기본값을 추가했습니다.
+
 ## 2.0.0
 
 ### Added
