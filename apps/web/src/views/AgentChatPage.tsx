@@ -38,6 +38,7 @@ export default function AgentChatPage() {
   const [input, setInput] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
+  const [encodingPercent, setEncodingPercent] = useState<number | null>(null);
 
   const canSend = useMemo(() => Boolean(input.trim() || imageFile), [input, imageFile]);
 
@@ -57,7 +58,14 @@ export default function AgentChatPage() {
           fileType: selected.type,
         });
       }
-      const image_base64 = selected ? await toBase64(selected) : null;
+      const image_base64 = selected
+        ? await toBase64(selected, {
+            maxBytes: 5 * 1024 * 1024,
+            maxDimension: 1600,
+            quality: 0.82,
+            onProgress: (pct) => setEncodingPercent(pct),
+          })
+        : null;
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (auth.token) headers.Authorization = `Bearer ${auth.token}`;
 
@@ -96,6 +104,7 @@ export default function AgentChatPage() {
       ]);
     } finally {
       setLoading(false);
+      setEncodingPercent(null);
     }
   }
 
@@ -185,6 +194,11 @@ export default function AgentChatPage() {
           <Text size="xs" c="dimmed">
             Enter: 줄바꿈 · Ctrl/⌘+Enter: 전송
           </Text>
+          {encodingPercent !== null ? (
+            <Text size="xs" c="dimmed">
+              이미지 인코딩 중... {encodingPercent}%
+            </Text>
+          ) : null}
         </Stack>
       </Card>
     </Stack>

@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 
 from ...core.auth import require_user
+from ...core.config import settings
 from ...core.logger import get_logger
 from ...schemas.agent import AgentChatRequest, AgentChatResponse
 from ...services.agent import agent_service
@@ -95,6 +96,11 @@ async def chat(
     _username: str = Depends(require_user),
 ) -> AgentChatResponse:
     try:
+        if request.image_base64 and len(request.image_base64) > settings.MAX_IMAGE_BASE64_LENGTH:
+            raise HTTPException(
+                status_code=413,
+                detail=f"image_base64 is too large (max {settings.MAX_IMAGE_BASE64_LENGTH} chars).",
+            )
         has_image = bool(request.image_base64)
         image_size = len(request.image_base64 or "")
         logger.info(
@@ -140,6 +146,8 @@ async def chat(
             identified=identified,
             debug=debug,
         )
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("POST /agent/chat failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc

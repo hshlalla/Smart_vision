@@ -1,6 +1,28 @@
 Smart Vision API Release Notes
 ===============================
 
+## 2.2.0
+
+### Added
+- CI 테스트 워크플로우를 추가했습니다.
+- `.github/workflows/tests.yml`
+- `apps/api/tests`와 `packages/model/tests`를 push/PR 시 자동 실행합니다.
+- API 테스트를 확장했습니다.
+- `apps/api/tests/test_api_endpoints.py` 추가
+- 범위: `hybrid/search`, `catalog/search`, `auth login/me`, 대용량 이미지(413) 검증
+- API 이미지 페이로드 상한 설정을 추가했습니다.
+- `MAX_IMAGE_BASE64_LENGTH` 환경설정 도입
+- `/api/v1/agent/chat`, `/api/v1/hybrid/search`에서 초과 시 `413` 반환
+
+### Changed
+- 로거 전파를 차단해 중복 로그 출력을 줄였습니다.
+- `apps/api/smart_vision_api/core/logger.py`: `logger.propagate = False`
+- 문서 기준 To-Do를 루트 파일에서 `docs/to_do_list.md`로 이관했습니다.
+
+### Fixed
+- 사용자 입력 검증 실패(예: oversized image)가 `500`으로 감싸지던 문제를 수정했습니다.
+- `HTTPException`은 그대로 반환하도록 예외 처리 경로를 분리했습니다.
+
 ## 2.1.0
 
 ### Added

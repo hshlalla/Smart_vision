@@ -1,6 +1,15 @@
 Smart Vision Model Release Notes
 ================================
 
+## 2.2.0
+
+### Added
+- CI에서 모델 테스트 자동 실행을 추가했습니다.
+- `.github/workflows/tests.yml`의 `model-tests` job이 `packages/model/tests`를 검증합니다.
+
+### Changed
+- 모델 런타임 로직 변경은 없고, 테스트 자동화 운영 경로를 보강했습니다.
+
 ## 2.1.0
 
 ### Added

@@ -324,6 +324,29 @@ Gradio 데모는 API를 통하지 않고 오케스트레이터를 직접 호출�
 - `packages/model/tests/test_tracker_dataset.py` 추가
 - API 에러(detail) 반환, source dedupe, catalog 근거 보강, CSV 파싱/정규화 등 핵심 회귀 포인트를 자동 검증
 
+5. API 입력 검증 및 예외 처리 개선
+- `MAX_IMAGE_BASE64_LENGTH` 설정을 도입해 과대 이미지 payload를 사전에 차단
+- `POST /api/v1/agent/chat`, `POST /api/v1/hybrid/search`에서 제한 초과 시 `413`을 명시적으로 반환
+- `HTTPException`은 500으로 재래핑하지 않도록 분리해 오류 의미를 유지
+
+6. 로깅 중복 출력 완화
+- 커스텀 로거에서 `logger.propagate = False`를 적용해 uvicorn/root logger로의 중복 전파를 차단
+- 운영 로그 가독성을 개선하고 동일 이벤트의 중복 라인 출력을 줄임
+
+7. 프론트 업로드 UX 개선
+- 이미지 base64 인코딩 전 대용량 파일 자동 리사이즈(해상도/품질 옵션) 적용
+- 인코딩 진행률 표시(퍼센트)와 용량 제한 메시지 추가
+- 업로드 실패 시 사용자에게 즉시 원인 피드백 제공
+
+8. CI 자동 테스트 파이프라인 추가
+- `.github/workflows/tests.yml` 추가
+- `apps/api/tests`, `packages/model/tests`를 push/PR 시 자동 실행
+- 로컬/원격 테스트 결과 일관성을 확보
+
+9. 작업계획 문서 정리
+- 기존 루트 `to_do_list.md`를 `docs/to_do_list.md`로 이관
+- 우선순위를 `Now / Next / Later`로 재구성해 실행 가능 항목 중심으로 정리
+
 ## 5. Important Behavioral Clarifications
 
 ### 5.1 Hybrid Search 이미지 입력 방식
@@ -403,3 +426,4 @@ Gradio 데모는 API를 통하지 않고 오케스트레이터를 직접 호출�
 - `docs/releasenote_api.md`
 - `docs/releasenote_model.md`
 - `docs/releasenote_demo.md`
+- 개발 작업계획: `docs/to_do_list.md`

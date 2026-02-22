@@ -28,6 +28,7 @@ export default function SearchPage() {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<SearchResult[]>([]);
+  const [encodingPercent, setEncodingPercent] = useState<number | null>(null);
 
   const hasQuery = useMemo(() => Boolean(queryText.trim() || file), [queryText, file]);
 
@@ -46,7 +47,14 @@ export default function SearchPage() {
           fileType: selected.type,
         });
       }
-      const image_base64 = selected ? await toBase64(selected) : null;
+      const image_base64 = selected
+        ? await toBase64(selected, {
+            maxBytes: 5 * 1024 * 1024,
+            maxDimension: 1600,
+            quality: 0.82,
+            onProgress: (pct) => setEncodingPercent(pct),
+          })
+        : null;
       const payload = {
         query_text: queryText.trim() || null,
         image_base64,
@@ -72,6 +80,7 @@ export default function SearchPage() {
       notifications.show({ color: "red", title: "검색 실패", message: msg });
     } finally {
       setLoading(false);
+      setEncodingPercent(null);
     }
   }
 
@@ -128,6 +137,11 @@ export default function SearchPage() {
                 검색
               </Button>
             </Group>
+            {encodingPercent !== null ? (
+              <Text size="xs" c="dimmed" mt={6}>
+                이미지 인코딩 중... {encodingPercent}%
+              </Text>
+            ) : null}
           </Grid.Col>
         </Grid>
       </Card>

@@ -32,6 +32,8 @@ def get_logger(name: str = "smart_vision") -> logging.Logger:
     # Initialize logger
     logger = logging.getLogger(name)
     logger.setLevel(settings.LOG_LEVEL)
+    # Prevent duplicate emission via root/uvicorn loggers.
+    logger.propagate = False
 
     # Configure formatter
     formatter = logging.Formatter(

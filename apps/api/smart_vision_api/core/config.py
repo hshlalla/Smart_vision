@@ -60,6 +60,7 @@ class Settings(BaseSettings):
 
     # CORS (for front-end access)
     CORS_ORIGINS: str = "*"  # comma-separated origins or "*"
+    MAX_IMAGE_BASE64_LENGTH: int = 8_000_000
 
     # Simple token auth (optional)
     AUTH_ENABLED: bool = False

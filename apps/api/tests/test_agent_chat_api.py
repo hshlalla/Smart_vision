@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from smart_vision_api.api.v1 import agent as agent_api
 from smart_vision_api.core.auth import require_user
+from smart_vision_api.core.config import settings
 
 
 def _build_client() -> TestClient:
@@ -103,3 +104,15 @@ def test_agent_chat_returns_500_detail_on_service_error(monkeypatch):
     resp = client.post("/api/v1/agent/chat", json={"message": "안녕"})
     assert resp.status_code == 500
     assert "OPENAI_API_KEY is not set" in resp.json()["detail"]
+
+
+def test_agent_chat_rejects_too_large_image(monkeypatch):
+    monkeypatch.setattr(settings, "MAX_IMAGE_BASE64_LENGTH", 10)
+    client = _build_client()
+
+    resp = client.post(
+        "/api/v1/agent/chat",
+        json={"message": "이미지", "image_base64": "a" * 11},
+    )
+    assert resp.status_code == 413
+    assert "too large" in resp.json()["detail"]

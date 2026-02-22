@@ -11,6 +11,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from ...core.auth import require_user
+from ...core.config import settings
 from ...core.logger import get_logger
 from ...services.hybrid import hybrid_service
 from ...schemas.payload import HybridIndexResponse, HybridSearchRequest, HybridSearchResponse
@@ -52,6 +53,8 @@ async def index_asset(
         result = hybrid_service.index_asset(image, metadata)
         logger.info("POST /hybrid/index completed: model_id=%s status=%s", model_id, result.get("status"))
         return HybridIndexResponse(**result)
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("POST /hybrid/index failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -67,6 +70,11 @@ async def search(
     _username: str = Depends(require_user),
 ) -> HybridSearchResponse:
     try:
+        if request.image_base64 and len(request.image_base64) > settings.MAX_IMAGE_BASE64_LENGTH:
+            raise HTTPException(
+                status_code=413,
+                detail=f"image_base64 is too large (max {settings.MAX_IMAGE_BASE64_LENGTH} chars).",
+            )
         logger.info(
             "POST /hybrid/search received: has_image=%s image_base64_len=%d query_len=%d part_number=%s top_k=%d",
             bool(request.image_base64),
@@ -83,6 +91,8 @@ async def search(
         )
         logger.info("POST /hybrid/search completed: result_count=%d", len(results or []))
         return HybridSearchResponse(results=results)
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("POST /hybrid/search failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
