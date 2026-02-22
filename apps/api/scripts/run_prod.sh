@@ -11,8 +11,11 @@ ENV_FILE="$PROJECT_ROOT/.env"
 # Load environment variables from .env file
 if [[ -f "$ENV_FILE" ]]; then
     echo "Loading environment variables from $ENV_FILE"
-    export $(grep -v '^#' "$ENV_FILE" | xargs)
-    export MILVUS_URI="tcp://localhost:19530"
+    set -a
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    set +a
+    export MILVUS_URI="${MILVUS_URI:-tcp://localhost:19530}"
 else
     echo "Warning: $ENV_FILE not found. Using default production configuration."
 fi
@@ -35,13 +38,13 @@ export LOG_LEVEL="INFO"
 
 # Configure Python environment and change to project root
 cd "$PROJECT_ROOT"
-if [[ ":$PYTHONPATH:" != *":$PROJECT_ROOT"* ]]; then
+if [[ ":${PYTHONPATH:-}:" != *":$PROJECT_ROOT"* ]]; then
     echo "Adding project root to PYTHONPATH: $PROJECT_ROOT"
-    export PYTHONPATH="$PYTHONPATH:$PROJECT_ROOT"
+    export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}$PROJECT_ROOT"
 fi
 
-# ✅ 로그 디렉토리 준비 (이 부분을 추가하세요)
-LOG_DIR="$PROJECT_ROOT/smart_vision_api/logs"
+# Ensure log directory exists
+LOG_DIR="$PROJECT_ROOT/${LOG_DIR:-logs}"
 mkdir -p "$LOG_DIR"
 echo "Ensured log directory exists at: $LOG_DIR"
 

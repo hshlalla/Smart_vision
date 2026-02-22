@@ -76,13 +76,22 @@ apps/api/
    - 로컬 호스트에서 실행 중인 Milvus에 붙을 때는 `tcp://localhost:19530` 를 사용하세요.
    - 로컬에서 빠르게 테스트하려면 `docker-compose up -d milvus` 를 사용할 수 있습니다.
 
-4. **API 실행**
+4. **API 실행 (권장: 스크립트)**
    ```bash
-   uvicorn smart_vision_api.main:app --reload --host 0.0.0.0 --port 8000
+   ./scripts/run_dev.sh
+   ```
+   - `run_dev.sh`는 `apps/api/.env`를 읽어 환경변수를 자동 로드합니다.
+   - `.env`에 `OPENAI_API_KEY` 등이 있으면 별도 `export`가 필요 없습니다.
+   - 기본 포트는 `8001`입니다.
+
+5. **직접 uvicorn 실행(선택)**
+   ```bash
+   uvicorn smart_vision_api.main:app --reload --host 0.0.0.0 --port 8000 --env-file .env
    ```
 
-5. **확인**
-   - [http://localhost:8000/api/docs](http://localhost:8000/api/docs) 에서 OpenAPI 문서를 확인할 수 있습니다.
+6. **확인**
+   - `run_dev.sh` 실행 시: [http://localhost:8001/api/docs](http://localhost:8001/api/docs)
+   - 직접 `uvicorn --port 8000` 실행 시: [http://localhost:8000/api/docs](http://localhost:8000/api/docs)
 
 ---
 

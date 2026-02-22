@@ -44,12 +44,20 @@ export default function AgentChatPage() {
   async function send() {
     if (!canSend) return;
     const text = input.trim() || "이 제품 뭐야?";
+    const selected = imageFile;
     setInput("");
     setLoading(true);
     setMessages((prev) => [...prev, { role: "user", content: text }]);
 
     try {
-      const image_base64 = imageFile ? await toBase64(imageFile) : null;
+      if (selected) {
+        console.info("[AgentChat] preparing upload", {
+          fileName: selected.name,
+          fileSizeBytes: selected.size,
+          fileType: selected.type,
+        });
+      }
+      const image_base64 = selected ? await toBase64(selected) : null;
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (auth.token) headers.Authorization = `Bearer ${auth.token}`;
 
@@ -74,9 +82,14 @@ export default function AgentChatPage() {
 
       setMessages((prev) => [...prev, { role: "assistant", content: (res.answer || "(empty)") + sourcesText }]);
       setImageFile(null);
+      console.info("[AgentChat] request completed", {
+        hasImage: Boolean(selected),
+        answerLength: String(res.answer || "").length,
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       notifications.show({ color: "red", title: "에이전트 오류", message: msg });
+      console.error("[AgentChat] request failed", { hasImage: Boolean(selected), error: msg });
       setMessages((prev) => [
         ...prev,
         { role: "assistant", content: `오류가 발생했어: ${msg}` },

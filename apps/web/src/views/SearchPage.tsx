@@ -36,9 +36,17 @@ export default function SearchPage() {
       notifications.show({ color: "yellow", title: "입력 필요", message: "텍스트 또는 이미지를 넣어주세요." });
       return;
     }
+    const selected = file;
     setLoading(true);
     try {
-      const image_base64 = file ? await toBase64(file) : null;
+      if (selected) {
+        console.info("[HybridSearch] preparing upload", {
+          fileName: selected.name,
+          fileSizeBytes: selected.size,
+          fileType: selected.type,
+        });
+      }
+      const image_base64 = selected ? await toBase64(selected) : null;
       const payload = {
         query_text: queryText.trim() || null,
         image_base64,
@@ -53,9 +61,14 @@ export default function SearchPage() {
         body: JSON.stringify(payload),
       });
       setResults(res.results || []);
+      console.info("[HybridSearch] request completed", {
+        hasImage: Boolean(selected),
+        resultCount: res.results?.length || 0,
+      });
       notifications.show({ color: "teal", title: "검색 완료", message: `결과 ${res.results?.length || 0}건` });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      console.error("[HybridSearch] request failed", { hasImage: Boolean(selected), error: msg });
       notifications.show({ color: "red", title: "검색 실패", message: msg });
     } finally {
       setLoading(false);

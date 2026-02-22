@@ -13,8 +13,11 @@ ENV_FILE="$PROJECT_ROOT/.env"
 # Load environment variables from .env file
 if [[ -f "$ENV_FILE" ]]; then
     echo "Loading environment variables from $ENV_FILE"
-    export $(grep -v '^#' "$ENV_FILE" | xargs)
-    export MILVUS_URI="tcp://localhost:19530"
+    set -a
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    set +a
+    export MILVUS_URI="${MILVUS_URI:-tcp://localhost:19530}"
 else
     echo "Warning: $ENV_FILE not found. Using default development configuration."
 fi

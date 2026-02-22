@@ -3,10 +3,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 
 from ...core.auth import require_user
+from ...core.logger import get_logger
 from ...schemas.agent import AgentChatRequest, AgentChatResponse
 from ...services.agent import agent_service
 
 router = APIRouter(prefix="/agent", tags=["Agent"])
+logger = get_logger("api.agent")
 
 def _extract_sources(debug: dict) -> list[dict[str, str]]:
     sources: list[dict[str, str]] = []
@@ -93,14 +95,30 @@ async def chat(
     _username: str = Depends(require_user),
 ) -> AgentChatResponse:
     try:
+        has_image = bool(request.image_base64)
+        image_size = len(request.image_base64 or "")
+        logger.info(
+            "POST /agent/chat received: has_image=%s image_base64_len=%d message_len=%d update_milvus=%s",
+            has_image,
+            image_size,
+            len(request.message or ""),
+            request.update_milvus,
+        )
         request_id = ""
         if request.image_base64:
             request_id = agent_service.put_image(request.image_base64)
+            logger.info("Stored uploaded image for /agent/chat: request_id=%s", request_id)
         result = await agent_service.chat(
             message=request.message,
             request_id=request_id,
             max_tool_results=request.max_tool_results,
             update_milvus=request.update_milvus,
+        )
+        steps = result.get("intermediate_steps") if isinstance(result, dict) else []
+        logger.info(
+            "POST /agent/chat model completed: intermediate_steps=%d output_len=%d",
+            len(steps) if isinstance(steps, list) else 0,
+            len(str(result.get("output") or "")) if isinstance(result, dict) else 0,
         )
         answer = str(result.get("output") or "").strip()
         debug = {k: v for k, v in result.items() if k != "output"}
@@ -123,4 +141,5 @@ async def chat(
             debug=debug,
         )
     except Exception as exc:
+        logger.exception("POST /agent/chat failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc

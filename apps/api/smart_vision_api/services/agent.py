@@ -264,6 +264,7 @@ class SmartVisionAgentService:
             "4) If there's no model_id (no match) and update_milvus=true, allocate_model_id by category prefix and upsert_model_metadata.\n"
             "5) If you used web_search, include 2-5 sources (title + url) at the end.\n"
             "6) If you used catalog_search, cite source and page in the answer.\n"
+            "7) If request_id is non-empty, never ask the user to upload an image again in this turn.\n"
             "Be honest about uncertainty.\n"
         )
 
@@ -277,6 +278,33 @@ class SmartVisionAgentService:
             messages.append(ai)
             tool_calls = getattr(ai, "tool_calls", None) or []
             if not tool_calls:
+                # Fallback: when an image is present but the model skipped tool-calls,
+                # inject a deterministic hybrid search context once and retry.
+                if request_id and not intermediate_steps:
+                    forced_tool = tool_map.get("hybrid_search")
+                    if forced_tool is not None:
+                        forced_args = {
+                            "request_id": request_id,
+                            "query_text": message,
+                            "top_k": max_tool_results,
+                        }
+                        try:
+                            forced_obs = forced_tool.invoke(forced_args)
+                        except Exception as exc:
+                            forced_obs = {"error": str(exc)}
+                        intermediate_steps.append(
+                            {"tool": "hybrid_search", "args": forced_args, "observation": forced_obs}
+                        )
+                        messages.append(
+                            HumanMessage(
+                                content=(
+                                    "The user already uploaded an image. "
+                                    "Use this hybrid_search result and answer directly.\n"
+                                    f"{json.dumps(forced_obs, ensure_ascii=False)}"
+                                )
+                            )
+                        )
+                        continue
                 break
             for call in tool_calls:
                 name = call.get("name")

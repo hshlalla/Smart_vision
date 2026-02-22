@@ -300,6 +300,30 @@ Gradio 데모는 API를 통하지 않고 오케스트레이터를 직접 호출�
 - schema mismatch/No vector field 에러 원인 가시화
 - 오래된 컬렉션 사용 시 drop/recreate 가이드 필요성 문서화
 
+### 4.8 Reliability/Testing/Observability Updates (2026-02-22)
+
+최근 개발 단계에서 API/모델 패키지에 다음 안정화 작업을 추가했다.
+
+1. 실행 스크립트의 `.env` 로딩 안정화
+- `apps/api/scripts/run_dev.sh`, `run_prod.sh`, `run_docker.sh`에서 `.env`를 `source` 기반으로 로딩하도록 정리
+- `PYTHONPATH`/`IMAGE_NAME`/`CONTAINER_NAME` 미정의로 인한 `set -u` 종료 리스크를 제거
+- `MILVUS_URI`는 강제 덮어쓰지 않고 미설정 시 기본값 사용
+
+2. API 이미지 업로드 가시성 강화
+- `POST /api/v1/agent/chat`, `POST /api/v1/hybrid/search`, `POST /api/v1/hybrid/index`에 수신/완료/실패 로그를 추가
+- 이미지 포함 여부, base64 길이, 결과 건수 등 운영 확인에 필요한 핵심 필드를 로깅
+- 프론트(`SearchPage`, `AgentChatPage`)에도 업로드 직전/요청 완료 콘솔 로그를 추가
+
+3. Agent 이미지 처리 내결함성 보강
+- 이미지가 업로드된 턴에서 LLM이 툴 호출을 생략하는 경우를 대비해 `hybrid_search` 1회 fallback 실행 로직을 추가
+- `request_id`가 존재하면 이미지 재업로드를 요구하지 않도록 시스템 규칙을 강화
+
+4. 테스트 체계 확장 (`pytest`)
+- `apps/api/tests/test_agent_chat_api.py` 추가
+- `packages/model/tests/test_metadata_normalizer.py` 추가
+- `packages/model/tests/test_tracker_dataset.py` 추가
+- API 에러(detail) 반환, source dedupe, catalog 근거 보강, CSV 파싱/정규화 등 핵심 회귀 포인트를 자동 검증
+
 ## 5. Important Behavioral Clarifications
 
 ### 5.1 Hybrid Search 이미지 입력 방식

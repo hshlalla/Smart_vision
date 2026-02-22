@@ -11,7 +11,10 @@ ENV_FILE="$PROJECT_ROOT/.env"
 # Load environment variables from .env file
 if [[ -f "$ENV_FILE" ]]; then
     echo "Loading environment variables from $ENV_FILE"
-    export $(grep -v '^#' "$ENV_FILE" | xargs)
+    set -a
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    set +a
 else
     echo "Warning: $ENV_FILE not found. Using default configuration."
 fi
@@ -22,8 +25,11 @@ mkdir -p "$PROJECT_ROOT/${MODEL_DIR:-models}" "$PROJECT_ROOT/${LOG_DIR:-logs}"
 echo "Starting Milvus stack via docker compose..."
 docker compose -f "$PROJECT_ROOT/docker-compose.yml" up -d etcd minio standalone
 
+IMAGE_NAME="${IMAGE_NAME:-smart-vision-api}"
+CONTAINER_NAME="${CONTAINER_NAME:-smart-vision-api}"
+
 echo "Building smart-vision-api image (with GPU support)..."
-docker build -t $IMAGE_NAME "$PROJECT_ROOT"
+docker build -t "$IMAGE_NAME" "$PROJECT_ROOT"
 
 echo "Running $CONTAINER_NAME container with GPU enabled..."
 

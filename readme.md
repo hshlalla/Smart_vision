@@ -63,13 +63,15 @@ cd apps/api
 
 ```bash
 cd apps/api
-export MILVUS_URI=tcp://localhost:19530
-export AUTH_ENABLED=true
-export AUTH_USERNAME=admin
-export AUTH_PASSWORD=admin123
-export OPENAI_API_KEY=...   # required for /api/v1/agent/chat
+./scripts/run_dev.sh
+```
 
-uvicorn smart_vision_api.main:app --reload --host 0.0.0.0 --port 8000
+- `run_dev.sh`는 `apps/api/.env`를 읽어 환경변수를 자동으로 로드합니다.
+- 따라서 `.env`에 값이 있으면 별도 `export`는 필요 없습니다.
+- 기본 실행 포트는 `8001`입니다.
+- 직접 `uvicorn`으로 실행하려면 `.env`를 자동 로드하지 않으므로 아래처럼 실행하세요:
+```bash
+uvicorn smart_vision_api.main:app --reload --host 0.0.0.0 --port 8000 --env-file .env
 ```
 
 #### 3) Front (mobile-friendly)
