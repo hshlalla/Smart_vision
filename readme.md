@@ -118,9 +118,6 @@ docker run -d \
 | `AUTH_ENABLED` | Enable login/auth | `false` |
 | `OPENAI_API_KEY` | LLM key for agent bot | (required for agent) |
 | `COUNTERS_COLLECTION` | Milvus counters collection | `sv_counters` |
-
-## License
-
 Proprietary - suhun.hong
 
 ## Contact

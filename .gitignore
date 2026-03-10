@@ -37,24 +37,27 @@ __pycache__/
 htmlcov/
 dist/
 build/
+.tox/
+.nox/
 
-# ---------- Logs ----------
+# ---------- Logs / runtime artifacts ----------
 *.log
 logs/
 **/logs/
 !**/logs/.gitkeep
 
-# ---------- Docker volumes / large artifacts ----------
+# ---------- Data / volumes (docker, milvus, minio, etc.) ----------
 volumes/
 **/volumes/
 !**/volumes/.gitkeep
 
+# ---------- Models / large artifacts ----------
 models/
 **/models/
 !**/models/.gitkeep
 !**/models/README.md
 
-# ---------- Env / secrets ----------
+# ---------- Environment / secrets ----------
 .env
 .env.*
 *.env
@@ -63,6 +66,7 @@ models/
 !.env.template
 !.env.sample
 
+# Common secret material (keep private)
 *.pem
 *.key
 *.p12
