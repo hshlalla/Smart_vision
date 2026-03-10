@@ -14,8 +14,12 @@ Smart_vision/
 │   └── model                            # ML/search pipeline package
 ├── data/
 │   └── raw                              # Dataset root
+├── submission/                          # Submitted reports, feedback, guides, evidence
 └── docs/
-    └── PROJECT_STRUCTURE.md            # Structure and navigation guide
+    ├── architecture/                    # Architecture and structure guides
+    ├── planning/                        # Active plans and backlog
+    ├── reports/                         # Internal report-writing notes
+    └── release_notes/                   # Release notes by component
 ```
 
 Use canonical paths only (`apps/*`, `packages/*`, `data/*`).

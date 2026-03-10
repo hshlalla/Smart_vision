@@ -94,6 +94,36 @@ def test_agent_chat_passes_request_id_for_image(monkeypatch):
     assert seen["request_id"] == "rid-123"
 
 
+def test_agent_chat_defaults_update_milvus_to_false(monkeypatch):
+    seen = {"update_milvus": None}
+
+    async def fake_chat(**kwargs):
+        seen["update_milvus"] = kwargs["update_milvus"]
+        return {"output": "ok", "intermediate_steps": []}
+
+    monkeypatch.setattr(agent_api.agent_service, "chat", fake_chat)
+    client = _build_client()
+
+    resp = client.post("/api/v1/agent/chat", json={"message": "안녕"})
+    assert resp.status_code == 200
+    assert seen["update_milvus"] is False
+
+
+def test_agent_chat_accepts_explicit_update_milvus_true(monkeypatch):
+    seen = {"update_milvus": None}
+
+    async def fake_chat(**kwargs):
+        seen["update_milvus"] = kwargs["update_milvus"]
+        return {"output": "ok", "intermediate_steps": []}
+
+    monkeypatch.setattr(agent_api.agent_service, "chat", fake_chat)
+    client = _build_client()
+
+    resp = client.post("/api/v1/agent/chat", json={"message": "안녕", "update_milvus": True})
+    assert resp.status_code == 200
+    assert seen["update_milvus"] is True
+
+
 def test_agent_chat_returns_500_detail_on_service_error(monkeypatch):
     async def fake_chat(**kwargs):
         raise RuntimeError("OPENAI_API_KEY is not set. Configure it to use the agent.")

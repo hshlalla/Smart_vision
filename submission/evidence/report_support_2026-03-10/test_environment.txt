@@ -1,0 +1,19 @@
+Artifact date: 2026-03-10
+Workspace: /Users/mac/project/Smart_vision/apps/api
+Test venv: /tmp/sv-test-min
+
+Python:
+- python3 --version
+- Python 3.14.3
+
+Selected package versions from /tmp/sv-test-min:
+- pytest 9.0.2
+- fastapi 0.135.1
+- pydantic 2.12.5
+- pydantic-settings 2.13.1
+- langchain 1.2.10
+- langchain-openai 1.1.11
+
+Install notes:
+- Test dependencies were installed into `/tmp/sv-test-min`.
+- The production `requirements.txt` path was not used for the recorded test run because it pulls heavyweight runtime dependencies not required for the current pytest coverage.

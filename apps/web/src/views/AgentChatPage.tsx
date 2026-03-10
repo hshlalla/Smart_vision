@@ -9,6 +9,7 @@ import {
   Group,
   ScrollArea,
   Stack,
+  Switch,
   Text,
   Textarea,
   Title,
@@ -39,6 +40,7 @@ export default function AgentChatPage() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [encodingPercent, setEncodingPercent] = useState<number | null>(null);
+  const [updateMilvus, setUpdateMilvus] = useState(false);
 
   const canSend = useMemo(() => Boolean(input.trim() || imageFile), [input, imageFile]);
 
@@ -76,6 +78,7 @@ export default function AgentChatPage() {
           message: text,
           image_base64,
           max_tool_results: 5,
+          update_milvus: updateMilvus,
         }),
       });
 
@@ -194,6 +197,12 @@ export default function AgentChatPage() {
           <Text size="xs" c="dimmed">
             Enter: 줄바꿈 · Ctrl/⌘+Enter: 전송
           </Text>
+          <Switch
+            checked={updateMilvus}
+            onChange={(e) => setUpdateMilvus(e.currentTarget.checked)}
+            label="승인 후에만 써야 하므로 Milvus 업데이트는 기본적으로 꺼둡니다"
+            description="켜면 agent가 새 model_id 할당 및 메타데이터 upsert를 시도할 수 있습니다."
+          />
           {encodingPercent !== null ? (
             <Text size="xs" c="dimmed">
               이미지 인코딩 중... {encodingPercent}%

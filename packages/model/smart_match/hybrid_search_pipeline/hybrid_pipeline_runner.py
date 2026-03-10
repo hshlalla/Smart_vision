@@ -764,6 +764,9 @@ class HybridSearchOrchestrator:
             logger.warning("Search invoked without query_image or query_text.")
             return []
 
+        t_start = time.perf_counter()
+        timings_ms: Dict[str, float] = {}
+
         weights = self.retriever.weights
         alpha = weights.alpha
         beta = weights.beta
@@ -780,10 +783,14 @@ class HybridSearchOrchestrator:
 
         if query_image:
             logger.info("Running image/OCR/caption search")
+            t_preprocess = time.perf_counter()
             query_record = self.preprocessing(str(query_image), {})
+            timings_ms["preprocessing"] = round((time.perf_counter() - t_preprocess) * 1000, 2)
 
             image_vector = query_record.image_vector.tolist()
+            t_image_search = time.perf_counter()
             image_results = self.index.search_images(image_vector, top_k=search_k)
+            timings_ms["image_search"] = round((time.perf_counter() - t_image_search) * 1000, 2)
             attr_cache = self._fetch_attrs_for_hits(image_results)
             logger.debug("Image search returned %d candidates", len(image_results))
             for hit in image_results:
@@ -812,7 +819,9 @@ class HybridSearchOrchestrator:
             ocr_query_text = query_record.ocr_text or "\n".join(query_record.ocr_tokens)
             if ocr_query_text:
                 ocr_query_vector = self.text_encoder.encode_query(ocr_query_text).tolist()
+                t_ocr_search = time.perf_counter()
                 text_results = self.index.search_texts(ocr_query_vector, top_k=search_k)
+                timings_ms["ocr_search"] = round((time.perf_counter() - t_ocr_search) * 1000, 2)
                 attr_cache = self._fetch_attrs_for_hits(text_results)
                 logger.debug("OCR text search returned %d candidates", len(text_results))
                 for hit in text_results:
@@ -826,10 +835,14 @@ class HybridSearchOrchestrator:
                         {"image_sims": [], "ocr_sims": [], "caption_sims": [], "text_query_sims": []},
                     )
                     entry["ocr_sims"].append(similarity)
+            else:
+                timings_ms["ocr_search"] = 0.0
 
             if query_record.caption_text:
                 caption_query_vector = self.text_encoder.encode_query(query_record.caption_text).tolist()
+                t_caption_search = time.perf_counter()
                 caption_results = self.index.search_captions(caption_query_vector, top_k=search_k)
+                timings_ms["caption_search"] = round((time.perf_counter() - t_caption_search) * 1000, 2)
                 attr_cache = self._fetch_attrs_for_hits(caption_results)
                 logger.debug("Caption search returned %d candidates", len(caption_results))
                 for hit in caption_results:
@@ -843,11 +856,15 @@ class HybridSearchOrchestrator:
                         {"image_sims": [], "ocr_sims": [], "caption_sims": [], "text_query_sims": []},
                     )
                     entry["caption_sims"].append(similarity)
+            else:
+                timings_ms["caption_search"] = 0.0
 
         if query_text:
             logger.info("Running text search")
+            t_text_search = time.perf_counter()
             text_vector = self.text_encoder.encode_query(query_text).tolist()
             model_results = self.index.search_models(text_vector, top_k=search_k)
+            timings_ms["text_search"] = round((time.perf_counter() - t_text_search) * 1000, 2)
             logger.debug("Text search returned %d model candidates", len(model_results))
             for hit in model_results:
                 model_id = str(hit.id)
@@ -858,12 +875,22 @@ class HybridSearchOrchestrator:
                 )
                 entry["ocr_sims"].append(similarity)
                 entry["text_query_sims"].append(similarity)
+        elif query_text is not None:
+            timings_ms["text_search"] = 0.0
 
         if not model_scores:
+            timings_ms["total"] = round((time.perf_counter() - t_start) * 1000, 2)
             logger.warning("No candidates retrieved for query.")
+            logger.info(
+                "Search completed: query_image=%s, query_text=%s, results=0 timings_ms=%s",
+                bool(query_image),
+                bool(query_text),
+                timings_ms,
+            )
             return []
 
         model_ids = list(model_scores.keys())
+        t_fetch_models = time.perf_counter()
         model_rows = self.index.fetch_models(
             model_ids,
             output_fields=[
@@ -877,9 +904,11 @@ class HybridSearchOrchestrator:
                 "description",
             ],
         )
+        timings_ms["fetch_models"] = round((time.perf_counter() - t_fetch_models) * 1000, 2)
 
         query_lower = (query_text or "").strip().lower() if query_text else ""
         results = []
+        t_finalize = time.perf_counter()
         for model_id, score_data in model_scores.items():
             info = model_rows.get(model_id, {})
             image_sims = score_data.get("image_sims", [])
@@ -971,8 +1000,15 @@ class HybridSearchOrchestrator:
             item["verified"] = bool(part_number_query_norm and item.get("part_number", "").upper() == part_number_query_norm)
 
         results.sort(key=lambda item: (item.get("lexical_hit", False), item.get("score", 0.0)), reverse=True)
-        logger.info("Search completed: query_image=%s, query_text=%s, results=%d",
-                    bool(query_image), bool(query_text), len(results[:top_k]))
+        timings_ms["finalize"] = round((time.perf_counter() - t_finalize) * 1000, 2)
+        timings_ms["total"] = round((time.perf_counter() - t_start) * 1000, 2)
+        logger.info(
+            "Search completed: query_image=%s, query_text=%s, results=%d timings_ms=%s",
+            bool(query_image),
+            bool(query_text),
+            len(results[:top_k]),
+            timings_ms,
+        )
         return results[:top_k]
 
     @staticmethod
