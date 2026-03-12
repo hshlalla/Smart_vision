@@ -6,10 +6,6 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
-from langchain_core.tools import tool
-
 from ..core.config import settings
 from .catalog import catalog_service
 from .gparts import search_prices
@@ -77,6 +73,8 @@ class SmartVisionAgentService:
             raise RuntimeError("OPENAI_API_KEY is not set. Configure it to use the agent.")
 
     def _build_tools(self, *, allow_updates: bool):
+        from langchain_core.tools import tool
+
         match_threshold = 0.75
 
         @tool("hybrid_search")
@@ -112,6 +110,9 @@ class SmartVisionAgentService:
         @tool("vision_identify")
         def vision_identify(request_id: str) -> dict[str, Any]:
             """Use a vision-capable LLM to describe the uploaded image and guess product keywords."""
+            from langchain_core.messages import HumanMessage
+            from langchain_openai import ChatOpenAI
+
             rid = (request_id or "").strip()
             if not rid:
                 return {"error": "request_id required"}
@@ -238,6 +239,9 @@ class SmartVisionAgentService:
         max_tool_results: int,
         update_milvus: bool,
     ) -> Dict[str, Any]:
+        from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+        from langchain_openai import ChatOpenAI
+
         self._require_openai_key()
 
         allow_updates = bool(update_milvus)

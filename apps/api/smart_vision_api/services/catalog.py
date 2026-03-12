@@ -12,22 +12,19 @@ import time
 import uuid
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple
 
 from fastapi import UploadFile
 from pymilvus import Collection, CollectionSchema, DataType, FieldSchema, connections, utility
 from pypdf import PdfReader
-from smart_match.hybrid_search_pipeline.preprocessing.embedding.bge_m3_encoder import BGEM3TextEncoder
 
 from ..core.config import settings
 from ..core.logger import get_logger
 
 logger = get_logger("catalog_service")
 
-try:
-    from paddleocr import PaddleOCR
-except ImportError:  # pragma: no cover - optional dependency
-    PaddleOCR = None
+if TYPE_CHECKING:
+    from smart_match.hybrid_search_pipeline.preprocessing.embedding.bge_m3_encoder import BGEM3TextEncoder
 
 
 class _TTLCache:
@@ -72,6 +69,10 @@ class CatalogRagService:
     @property
     def text_encoder(self) -> BGEM3TextEncoder:
         if self._text_encoder is None:
+            from smart_match.hybrid_search_pipeline.preprocessing.embedding.bge_m3_encoder import (
+                BGEM3TextEncoder,
+            )
+
             logger.info("Initializing catalog text encoder...")
             self._text_encoder = BGEM3TextEncoder()
         return self._text_encoder
@@ -80,7 +81,9 @@ class CatalogRagService:
     def ocr_engine(self):
         if self._ocr_engine is not None:
             return self._ocr_engine
-        if PaddleOCR is None:
+        try:
+            from paddleocr import PaddleOCR
+        except ImportError:  # pragma: no cover - optional dependency
             self._ocr_engine = False
             return None
         try:

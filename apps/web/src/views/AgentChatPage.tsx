@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActionIcon,
   Avatar,
@@ -7,6 +7,7 @@ import {
   Card,
   FileButton,
   Group,
+  Image,
   ScrollArea,
   Stack,
   Switch,
@@ -24,11 +25,20 @@ import { apiFetchJson, toBase64 } from "../utils/api";
 type ChatMsg = {
   role: "user" | "assistant";
   content: string;
+  imageName?: string;
+  imagePreviewUrl?: string;
 };
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export default function AgentChatPage() {
   const auth = useAuth();
   const isMobile = useMediaQuery("(max-width: 48em)");
+  const messagePreviewUrlsRef = useRef<string[]>([]);
   const [messages, setMessages] = useState<ChatMsg[]>([
     {
       role: "assistant",
@@ -38,19 +48,49 @@ export default function AgentChatPage() {
   ]);
   const [input, setInput] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [selectedPreviewUrl, setSelectedPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [encodingPercent, setEncodingPercent] = useState<number | null>(null);
   const [updateMilvus, setUpdateMilvus] = useState(false);
 
   const canSend = useMemo(() => Boolean(input.trim() || imageFile), [input, imageFile]);
 
+  useEffect(() => {
+    if (!imageFile) {
+      setSelectedPreviewUrl(null);
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(imageFile);
+    setSelectedPreviewUrl(objectUrl);
+
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [imageFile]);
+
+  useEffect(
+    () => () => {
+      messagePreviewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      messagePreviewUrlsRef.current = [];
+    },
+    [],
+  );
+
   async function send() {
     if (!canSend) return;
     const text = input.trim() || "이 제품 뭐야?";
     const selected = imageFile;
+    const userMessage: ChatMsg = { role: "user", content: text };
+
+    if (selected) {
+      const sentPreviewUrl = URL.createObjectURL(selected);
+      messagePreviewUrlsRef.current.push(sentPreviewUrl);
+      userMessage.imageName = selected.name;
+      userMessage.imagePreviewUrl = sentPreviewUrl;
+    }
+
     setInput("");
     setLoading(true);
-    setMessages((prev) => [...prev, { role: "user", content: text }]);
+    setMessages((prev) => [...prev, userMessage]);
 
     try {
       if (selected) {
@@ -141,6 +181,23 @@ export default function AgentChatPage() {
                     backgroundColor: m.role === "user" ? "rgba(76,110,245,0.18)" : "rgba(255,255,255,0.06)",
                   }}
                 >
+                  {m.imagePreviewUrl ? (
+                    <Stack gap={6} mb={m.content ? "xs" : 0}>
+                      <Image
+                        src={m.imagePreviewUrl}
+                        alt={m.imageName || "uploaded image"}
+                        radius="md"
+                        h={160}
+                        w={220}
+                        fit="cover"
+                      />
+                      {m.imageName ? (
+                        <Text size="xs" c="dimmed">
+                          {m.imageName}
+                        </Text>
+                      ) : null}
+                    </Stack>
+                  ) : null}
                   <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
                     {m.content}
                   </Text>
@@ -180,6 +237,32 @@ export default function AgentChatPage() {
               보내기
             </Button>
           </Group>
+
+          {selectedPreviewUrl && imageFile ? (
+            <Card withBorder radius="md" p="xs">
+              <Group align="flex-start" wrap="nowrap">
+                <Image
+                  src={selectedPreviewUrl}
+                  alt={imageFile.name}
+                  radius="md"
+                  h={84}
+                  w={84}
+                  fit="cover"
+                />
+                <Stack gap={2} style={{ minWidth: 0 }}>
+                  <Text size="sm" fw={500} lineClamp={1}>
+                    {imageFile.name}
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    {formatFileSize(imageFile.size)}
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    전송하면 사용자 메시지에 썸네일로 함께 표시됩니다.
+                  </Text>
+                </Stack>
+              </Group>
+            </Card>
+          ) : null}
 
           <Textarea
             minRows={2}

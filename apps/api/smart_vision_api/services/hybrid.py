@@ -15,20 +15,21 @@ import time
 import uuid
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 from fastapi import UploadFile
-
-from smart_match import HybridSearchOrchestrator
-from smart_match.hybrid_search_pipeline.hybrid_pipeline_runner import (
-    FusionWeights,
-    MilvusConnectionConfig,
-)
 
 from ..core.config import settings
 from ..core.logger import get_logger
 
 logger = get_logger("hybrid_service")
+
+if TYPE_CHECKING:
+    from smart_match import HybridSearchOrchestrator
+    from smart_match.hybrid_search_pipeline.hybrid_pipeline_runner import (
+        FusionWeights,
+        MilvusConnectionConfig,
+    )
 
 
 class _TTLCache:
@@ -61,14 +62,24 @@ class HybridSearchService:
 
     def __init__(self) -> None:
         self._orchestrator: HybridSearchOrchestrator | None = None
-        self._milvus_config = MilvusConnectionConfig(uri=settings.MILVUS_URI)
-        self._fusion_weights = FusionWeights(alpha=0.5, beta=0.3, gamma=0.2)
+        self._milvus_config = None
+        self._fusion_weights = None
         self._query_cache = _TTLCache(ttl_seconds=60, max_items=256)
 
     @property
     def orchestrator(self) -> HybridSearchOrchestrator:
         if self._orchestrator is None:
+            from smart_match import HybridSearchOrchestrator
+            from smart_match.hybrid_search_pipeline.hybrid_pipeline_runner import (
+                FusionWeights,
+                MilvusConnectionConfig,
+            )
+
             logger.info("Initializing HybridSearchOrchestrator for API service...")
+            if self._milvus_config is None:
+                self._milvus_config = MilvusConnectionConfig(uri=settings.MILVUS_URI)
+            if self._fusion_weights is None:
+                self._fusion_weights = FusionWeights(alpha=0.5, beta=0.3, gamma=0.2)
             self._orchestrator = HybridSearchOrchestrator(
                 milvus=self._milvus_config,
                 fusion_weights=self._fusion_weights,

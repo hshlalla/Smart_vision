@@ -30,8 +30,25 @@ Example:
 from pathlib import Path
 from typing import List
 
-import torch
 from pydantic_settings import BaseSettings
+
+
+def _cuda_available() -> bool:
+    """Resolve CUDA availability lazily.
+
+    Importing torch at module import time makes even auth-only API startup pay the
+    full ML stack initialization cost. We only need this check when a device
+    property is actually accessed.
+    """
+    try:
+        import torch
+    except Exception:
+        return False
+
+    try:
+        return bool(torch.cuda.is_available())
+    except Exception:
+        return False
 
 class Settings(BaseSettings):
     """Configuration management service."""
@@ -139,10 +156,10 @@ class Settings(BaseSettings):
             return "cpu"
 
         if device_preference == "cuda":
-            return "cuda" if torch.cuda.is_available() else "cpu"
+            return "cuda" if _cuda_available() else "cpu"
 
         # Default behavior for "auto" setting
-        return "cuda" if torch.cuda.is_available() else "cpu"
+        return "cuda" if _cuda_available() else "cpu"
 
     @property
     def equipment_categorization_model_path(self) -> Path:
@@ -177,10 +194,10 @@ class Settings(BaseSettings):
             return "cpu"
 
         if device_preference == "cuda":
-            return "cuda" if torch.cuda.is_available() else "cpu"
+            return "cuda" if _cuda_available() else "cpu"
 
         # Default behavior for "auto" setting
-        return "cuda" if torch.cuda.is_available() else "cpu"
+        return "cuda" if _cuda_available() else "cpu"
 
     @property
     def cors_origins_list(self) -> List[str]:

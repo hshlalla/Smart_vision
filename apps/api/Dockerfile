@@ -24,27 +24,23 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
 # Install production ASGI server
 # Note: Installing separately to utilize layer caching
-RUN pip install --no-cache-dir "uvicorn[standard]>=0.34.2"
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel "uvicorn[standard]>=0.34.2"
 
-# Install project dependencies from vendor directory
-# Custom wheels are used to ensure reproducible builds
-COPY vendor/wheels wheels/
-RUN pip install --no-cache-dir wheels/*.whl
+# Copy only the packages required by the API image.
+COPY packages/model /app/packages/model
+COPY apps/api /app/apps/api
 
-# Copy application source code
-# Note: Ordered by change frequency to optimize layer caching
-COPY pyproject.toml README.md ./
-COPY smart_vision_api smart_vision_api/
+# Install local packages so the API can import the shared model package.
+RUN pip install --no-cache-dir /app/packages/model /app/apps/api
 
-# Install API package in development mode
-RUN pip install --no-cache-dir --no-build-isolation .
+WORKDIR /app/apps/api
 
 # Create persistent storage directories
 RUN mkdir -p models logs
 
 # Configure application environment
-ENV MODEL_DIR=/app/models \
-    LOG_DIR=/app/logs \
+ENV MODEL_DIR=/app/apps/api/models \
+    LOG_DIR=/app/apps/api/logs \
     LOG_LEVEL=INFO \
     EQUIPMENT_CATEGORIZATION_DEVICE=cuda \
     EQUIPMENT_CATEGORIZATION_MODEL_PATH=equipment_categorization \
@@ -53,7 +49,7 @@ ENV MODEL_DIR=/app/models \
 
 # Configure container
 EXPOSE 8000
-VOLUME ["models", "logs"]
+VOLUME ["/app/apps/api/models", "/app/apps/api/logs"]
 
 # Launch production server with optimized settings
 CMD ["uvicorn", "smart_vision_api.main:app", \

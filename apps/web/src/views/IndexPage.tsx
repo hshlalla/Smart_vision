@@ -1,10 +1,11 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Button,
   Card,
   FileInput,
   Grid,
   Group,
+  Image,
   Stack,
   Text,
   TextInput,
@@ -24,7 +25,20 @@ export default function IndexPage() {
   const [category, setCategory] = useState("");
   const [description, setDescription] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!file) {
+      setPreviewUrl(null);
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    setPreviewUrl(objectUrl);
+
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [file]);
 
   async function onIndex() {
     if (!file) {
@@ -113,6 +127,24 @@ export default function IndexPage() {
               required
             />
           </Grid.Col>
+
+          {previewUrl && file ? (
+            <Grid.Col span={12}>
+              <Card withBorder radius="md" p="sm">
+                <Group align="flex-start" wrap="nowrap">
+                  <Image src={previewUrl} alt={file.name} radius="md" h={120} w={120} fit="cover" />
+                  <Stack gap={4} style={{ minWidth: 0 }}>
+                    <Text fw={600} lineClamp={1}>
+                      {file.name}
+                    </Text>
+                    <Text size="sm" c="dimmed">
+                      인덱싱 전에 업로드할 이미지를 미리 확인할 수 있습니다.
+                    </Text>
+                  </Stack>
+                </Group>
+              </Card>
+            </Grid.Col>
+          ) : null}
 
           <Grid.Col span={12}>
             <Group justify="flex-end">
