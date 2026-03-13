@@ -17,7 +17,6 @@ import os
 import re
 import shutil
 import time
-from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
@@ -29,13 +28,21 @@ from .data_collection.tracker_dataset import TrackerDataset
 from .preprocessing.captioning.gpt_captioner import GPTVLCaptioner
 from .preprocessing.captioning.qwen3_captioner import Qwen3VLCaptioner
 from .preprocessing.embedding.bge_m3_encoder import BGEM3TextEncoder
-from .preprocessing.embedding.bge_vl_encoder import BGEVLImageEncoder
+from .preprocessing.embedding.qwen3_vl_embedding import Qwen3VLImageEncoder
 from .preprocessing.metadata_normalizer import MetadataNormalizer
 from .preprocessing.ocr.OCR import PaddleOCRVLPipeline
 from .preprocessing.pipeline import PreprocessingPipeline
 from .retrieval.milvus_hybrid_index import CollectionConfig, FieldSpec, HybridMilvusIndex
 from .retrieval.milvus_counters import MilvusCounterStore
 from .search.fusion_retriever import FusionWeights, HybridFusionRetriever
+from .search.qwen3_vl_reranker import Qwen3VLReranker
+from .search.ranking_utils import (
+    MIN_RESULT_SCORE,
+    compute_exact_field_boost,
+    compute_lexical_score,
+    passes_min_score,
+    tokenize_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,22 +68,25 @@ class MilvusConnectionConfig:
 class HybridSearchOrchestrator:
     """Top-level orchestrator that manages preprocessing, indexing, and search."""
 
+    MIN_RESULT_SCORE = MIN_RESULT_SCORE
+
     def __init__(
         self,
         *,
         milvus: MilvusConnectionConfig = MilvusConnectionConfig(),
-        image_collection: str = "image_parts",
-        text_collection: str = "text_parts",
-        attrs_collection: str = "attrs_parts",
-        model_collection: str = "model_texts",
+        image_collection: str = "qwen3_vl_image_parts",
+        text_collection: str = "bge_m3_text_parts",
+        attrs_collection: str = "attrs_parts_v2",
+        model_collection: str = "bge_m3_model_texts",
         fusion_weights: FusionWeights = FusionWeights(alpha=0.5, beta=0.3, gamma=0.2),
         tracker_dataset_path: str | Path | None = None,
     ) -> None:
         self._connect_milvus(milvus)
-        self.vision_encoder = BGEVLImageEncoder()
+        self.vision_encoder = Qwen3VLImageEncoder()
         self.text_encoder = BGEM3TextEncoder()
         self.ocr_engine = PaddleOCRVLPipeline()
         self.captioner = self._init_captioner()
+        self.reranker = self._init_reranker()
         self.metadata_normalizer = MetadataNormalizer()
         self.preprocessing = PreprocessingPipeline(
             vision_encoder=self.vision_encoder,
@@ -95,8 +105,8 @@ class HybridSearchOrchestrator:
             text_collection,
             attrs_collection,
             model_collection,
-            "caption_parts",
-            "catalog_chunks",
+            "bge_m3_caption_parts",
+            "bge_m3_catalog_chunks",
         }
         if counters_collection in reserved_collection_names:
             raise ValueError(
@@ -122,7 +132,7 @@ class HybridSearchOrchestrator:
         self.index = HybridMilvusIndex(
             image_cfg=CollectionConfig(name=image_collection, dimension=self.vision_encoder.embedding_dim),
             text_cfg=CollectionConfig(name=text_collection, dimension=self.text_encoder.embedding_dim),
-            caption_cfg=CollectionConfig(name="caption_parts", dimension=self.text_encoder.embedding_dim),
+            caption_cfg=CollectionConfig(name="bge_m3_caption_parts", dimension=self.text_encoder.embedding_dim),
             attrs_fields=[
                 FieldSpec("model_id", DataType.VARCHAR, max_length=256),
                 FieldSpec("maker", DataType.VARCHAR, max_length=256),
@@ -141,13 +151,13 @@ class HybridSearchOrchestrator:
             text_collection_name=text_collection,
             attrs_collection_name=attrs_collection,
             model_collection_name=model_collection,
-            caption_collection_name="caption_parts",
+            caption_collection_name="bge_m3_caption_parts",
         )
         self.index.create_indexes()
         self.index.load()
 
         self.retriever = HybridFusionRetriever(
-            cross_encoder=self._noop_cross_encoder,
+            cross_encoder=self.reranker or self._noop_cross_encoder,
             weights=fusion_weights,
         )
 
@@ -170,14 +180,15 @@ class HybridSearchOrchestrator:
 
         # Default selection:
         # - If CAPTIONER_BACKEND is set, honor it.
-        # - Else if OPENAI_API_KEY exists, prefer GPT (fast on CPU).
-        # - Else if CUDA is available, prefer local Qwen captioner.
+        # - Else if CUDA is available, prefer local Qwen captioner so the
+        #   retrieval stack stays inside the Qwen3-VL family.
+        # - Else if OPENAI_API_KEY exists, fall back to GPT on CPU.
         # - Else disable captioning (CPU local captioning is slow).
         if not backend:
-            if os.getenv("OPENAI_API_KEY"):
-                backend = "gpt"
-            elif torch.cuda.is_available():
+            if torch.cuda.is_available():
                 backend = "qwen"
+            elif os.getenv("OPENAI_API_KEY"):
+                backend = "gpt"
             else:
                 backend = "none"
 
@@ -201,6 +212,16 @@ class HybridSearchOrchestrator:
 
         logger.warning("Unknown CAPTIONER_BACKEND=%s; captioning disabled.", backend)
         return None
+
+    def _init_reranker(self):
+        if os.getenv("ENABLE_RERANKER", "1").strip().lower() in {"0", "false", "off", "no"}:
+            logger.info("Reranker disabled via ENABLE_RERANKER.")
+            return None
+        try:
+            return Qwen3VLReranker()
+        except Exception:
+            logger.exception("Failed to initialize Qwen3-VL reranker; continuing without reranking.")
+            return None
 
     def _primary_key_exists(self, primary_key: str) -> bool:
         rows = self.index.fetch_attributes([primary_key], output_fields=["pk"])
@@ -289,8 +310,7 @@ class HybridSearchOrchestrator:
 
     @staticmethod
     def _tokenize_text(text: str) -> List[str]:
-        value = (text or "").lower()
-        return re.findall(r"[a-z0-9]+(?:[-_][a-z0-9]+)?", value)
+        return tokenize_text(text)
 
     @staticmethod
     def _extract_spec_tokens(text: str) -> List[str]:
@@ -299,30 +319,25 @@ class HybridSearchOrchestrator:
         return re.findall(r"\d+(?:\.\d+)?(?:v|a|w|hz|mah|vac|vdc|amp|amps|volt|volts)", value)
 
     def _compute_lexical_score(self, query_text: str, haystacks: Sequence[str]) -> float:
-        query_tokens = self._tokenize_text(query_text)
-        if not query_tokens:
-            return 0.0
-        q_count = Counter(query_tokens)
-        joined_haystack = " ".join((h or "").lower() for h in haystacks)
-        if not joined_haystack.strip():
-            return 0.0
+        return compute_lexical_score(query_text, haystacks)
 
-        doc_tokens = self._tokenize_text(joined_haystack)
-        d_count = Counter(doc_tokens)
-        if not d_count:
-            return 0.0
+    @staticmethod
+    def _compute_exact_field_boost(query_text: str, *, model_id: str, maker: str, part_number: str, description: str) -> float:
+        return compute_exact_field_boost(
+            query_text,
+            model_id=model_id,
+            maker=maker,
+            part_number=part_number,
+            description=description,
+        )
 
-        overlap = sum(min(freq, d_count.get(tok, 0)) for tok, freq in q_count.items())
-        overlap_ratio = overlap / max(1.0, float(sum(q_count.values())))
-        tf_score = 0.0
-        for tok, qf in q_count.items():
-            df = d_count.get(tok, 0)
-            if df <= 0:
-                continue
-            tf_score += (1.0 + math.log1p(df)) * qf
-        tf_norm = tf_score / max(1.0, float(len(doc_tokens)))
-        substring_bonus = 0.2 if query_text.strip().lower() in joined_haystack else 0.0
-        return min(1.0, overlap_ratio * 0.7 + tf_norm * 0.3 + substring_bonus)
+    @staticmethod
+    def _passes_min_score(*, score: float, lexical_hit: bool, exact_field_boost: float) -> bool:
+        return passes_min_score(
+            score=score,
+            lexical_hit=lexical_hit,
+            exact_field_boost=exact_field_boost,
+        )
 
     def _compute_spec_score(
         self,
@@ -945,6 +960,7 @@ class HybridSearchOrchestrator:
             lexical_hit = False
             lexical_score = 0.0
             spec_match_score = 0.0
+            exact_field_boost = 0.0
             if query_lower:
                 haystacks = [
                     metadata_text,
@@ -962,13 +978,34 @@ class HybridSearchOrchestrator:
                     haystacks=haystacks,
                     part_number=part_number_value,
                 )
+                exact_field_boost = self._compute_exact_field_boost(
+                    query_text or "",
+                    model_id=model_id,
+                    maker=info.get("maker", "") or "",
+                    part_number=part_number_value,
+                    description=info.get("description", "") or "",
+                )
                 # Blend dense + lexical + exact/spec evidence.
                 final_score = min(
                     1.0,
-                    final_score * 0.65 + lexical_score * 0.20 + spec_match_score * 0.15,
+                    final_score * 0.45
+                    + lexical_score * 0.20
+                    + spec_match_score * 0.15
+                    + exact_field_boost * 0.20,
                 )
                 if lexical_hit:
-                    final_score = min(1.0, final_score + 0.05)
+                    final_score = min(1.0, final_score + 0.08)
+                if exact_field_boost >= 0.55:
+                    final_score = min(1.0, final_score + 0.12)
+                elif exact_field_boost > 0.0:
+                    final_score = min(1.0, final_score + 0.06)
+
+            if not self._passes_min_score(
+                score=final_score,
+                lexical_hit=lexical_hit,
+                exact_field_boost=exact_field_boost,
+            ):
+                continue
             result = {
                 "model_id": model_id,
                 "score": final_score,
@@ -988,6 +1025,7 @@ class HybridSearchOrchestrator:
                 "lexical_hit": lexical_hit,
                 "lexical_score": lexical_score,
                 "spec_match_score": spec_match_score,
+                "exact_field_boost": exact_field_boost,
             }
             results.append(result)
 
@@ -999,7 +1037,27 @@ class HybridSearchOrchestrator:
         for item in results:
             item["verified"] = bool(part_number_query_norm and item.get("part_number", "").upper() == part_number_query_norm)
 
-        results.sort(key=lambda item: (item.get("lexical_hit", False), item.get("score", 0.0)), reverse=True)
+        results.sort(
+            key=lambda item: (
+                item.get("exact_field_boost", 0.0),
+                item.get("lexical_hit", False),
+                item.get("score", 0.0),
+            ),
+            reverse=True,
+        )
+        rerank_top_n = min(len(results), max(top_k, min(20, top_k * 2)))
+        if self.reranker is not None and rerank_top_n > 1:
+            try:
+                reranked = self.retriever.rerank(
+                    {
+                        "text": query_text or "",
+                        "image": str(query_image) if query_image else "",
+                    },
+                    results[:rerank_top_n],
+                )
+                results = reranked + results[rerank_top_n:]
+            except Exception:
+                logger.exception("Qwen3-VL reranking failed; keeping base ranking.")
         timings_ms["finalize"] = round((time.perf_counter() - t_finalize) * 1000, 2)
         timings_ms["total"] = round((time.perf_counter() - t_start) * 1000, 2)
         logger.info(

@@ -22,11 +22,13 @@ System Features:
 - Error tracking
 """
 
+from pathlib import Path
 from typing import Dict
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from .api.v1 import agent, auth, catalog, hybrid
 from .core.config import settings
@@ -73,6 +75,10 @@ app.include_router(
     catalog.router,
     prefix=settings.API_PREFIX,
 )
+
+media_root = Path("media").resolve()
+media_root.mkdir(parents=True, exist_ok=True)
+app.mount("/media", StaticFiles(directory=str(media_root)), name="media")
 
 
 @app.get(

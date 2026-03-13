@@ -14,9 +14,11 @@ Data Collection Layer
   📱 촬영(모바일) → QC 스크립트 → 업로드(S3/MinIO)
 
 Preprocessing & Embedding Layer
-  🔹 Vision Encoder (BGE-VL)
+  🔹 Vision Encoder (Qwen3-VL-Embedding-2B)
   🔹 OCR Engine (PaddleOCR-VL)
   🔹 Text Encoder (BGE-M3)
+  🔹 Reranker (Qwen3-VL-Reranker-2B)
+  🔹 Captioner (Qwen3-VL-2B-Instruct)
   🔹 Metadata Normalizer (Maker, PartNo, Category)
 
 Milvus Hybrid Index Layer
@@ -26,10 +28,10 @@ Milvus Hybrid Index Layer
   🧩 Fusion Retriever (vector + sparse + filter hybrid)
 
 Search & Re-Ranking Layer
-  1️⃣ Query Image → BGE-VL → image search top-K
-  2️⃣ OCR Text → BGE-M3 → text search top-K
+  1️⃣ Query Image → Qwen3-VL-Embedding-2B → image search top-K
+  2️⃣ OCR Text / metadata / caption → BGE-M3 → text search top-K
   3️⃣ Fusion Score = α·cos(img) + β·cos(txt)
-  4️⃣ Cross-Encoder Re-ranker (플레이스홀더)
+  4️⃣ Qwen3-VL-Reranker-2B top-N re-ranking
   5️⃣ Result Verification (OCR 일치도 + PN Match)
 ```
 
@@ -50,13 +52,13 @@ packages/model/
 │   ├── data_collection/mobile_capture_pipeline.py
 │   ├── preprocessing/
 │   │   ├── embedding/
-│   │   │   ├── bge_vl_encoder.py
-│   │   │   └── bge_m3_encoder.py
+│   │   │   └── qwen3_vl_embedding.py
 │   │   ├── metadata_normalizer.py
 │   │   ├── ocr/OCR.py
 │   │   └── pipeline.py
 │   ├── retrieval/milvus_hybrid_index.py
 │   ├── search/fusion_retriever.py
+│   ├── search/qwen3_vl_reranker.py
 │   └── hybrid_pipeline_runner.py
 ├── docs/releasenote.txt                 # 구조 및 변경 이력
 ├── pyproject.toml / requirements.txt    # 패키징 & 의존성
@@ -74,7 +76,7 @@ pip install -e .
 ```
 
 필요 의존성은 `requirements.txt`와 `pyproject.toml`에 정의되어 있습니다.  
-PaddleOCR-VL, BGE-VL, BGE-M3 모델은 최초 실행 시 자동으로 가중치를 다운로드합니다.
+PaddleOCR-VL, Qwen3-VL-Embedding-2B, Qwen3-VL-Reranker-2B, Qwen3-VL-2B-Instruct, BGE-M3 모델은 최초 실행 시 자동으로 가중치를 다운로드합니다.
 
 ---
 

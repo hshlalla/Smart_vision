@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import logging
+from importlib import import_module
 
 from PIL import Image, ImageDraw
 
@@ -29,6 +30,15 @@ except ImportError:  # pragma: no cover - optional dependency
     PaddleOCR = None
 
 logger = logging.getLogger(__name__)
+
+
+def _supports_paddleocr_vl() -> bool:
+    """Check whether the installed Paddle runtime exposes PaddleOCR-VL fused ops."""
+    try:
+        functional = import_module("paddle.incubate.nn.functional")
+    except Exception:
+        return False
+    return hasattr(functional, "fused_rms_norm_ext")
 
 
 @dataclass
@@ -56,19 +66,28 @@ class PaddleOCRVLPipeline:
         **pipeline_kwargs,
     ) -> None:
         self._score_threshold = score_threshold
-        self._use_vl = PaddleOCRVL is not None
+        self._pipeline_kwargs = dict(pipeline_kwargs)
+        self._use_vl = False
+        self._pipeline = None
 
-        if self._use_vl:
-            self._pipeline = PaddleOCRVL(**pipeline_kwargs)
-        elif PaddleOCR is not None:  # pragma: no cover - runtime fallback
-            if pipeline_kwargs:
-                logger.warning(
-                    "PaddleOCRVL not available, falling back to PaddleOCR with kwargs: %s",
-                    pipeline_kwargs,
+        if PaddleOCRVL is not None and _supports_paddleocr_vl():
+            try:
+                self._pipeline = PaddleOCRVL(**pipeline_kwargs)
+                self._use_vl = True
+            except Exception:  # pragma: no cover - runtime fallback
+                logger.exception(
+                    "Failed to initialize PaddleOCRVL. Falling back to PaddleOCR."
                 )
-            self._pipeline = PaddleOCR(**pipeline_kwargs)
+                self._pipeline = self._build_std_pipeline()
+        elif PaddleOCRVL is not None:
+            logger.warning(
+                "Installed Paddle runtime does not expose fused_rms_norm_ext; "
+                "disabling PaddleOCRVL and falling back to PaddleOCR."
+            )
+            self._pipeline = self._build_std_pipeline()
+        elif PaddleOCR is not None:  # pragma: no cover - runtime fallback
+            self._pipeline = self._build_std_pipeline()
         else:  # pragma: no cover - runtime fallback
-            self._pipeline = None
             logger.warning(
                 "Neither PaddleOCRVL nor PaddleOCR is installed. "
                 "OCR will return empty results."
@@ -79,9 +98,38 @@ class PaddleOCRVLPipeline:
         if self._pipeline is None:
             return OCRExecutionResult(tokens=[], combined_text="")
         if self._use_vl:
-            ocr_outputs = self._pipeline.predict(image_path)
-            return self._extract_from_vl(ocr_outputs)
-        return self._extract_from_std(self._pipeline.ocr(image_path, cls=True))
+            try:
+                ocr_outputs = self._pipeline.predict(image_path)
+                return self._extract_from_vl(ocr_outputs)
+            except Exception:  # pragma: no cover - runtime fallback
+                logger.exception(
+                    "PaddleOCRVL inference failed. Retrying with standard PaddleOCR."
+                )
+                self._pipeline = self._build_std_pipeline()
+                self._use_vl = False
+                if self._pipeline is None:
+                    return OCRExecutionResult(tokens=[], combined_text="")
+        return self._extract_from_std(self._run_std_ocr(image_path))
+
+    def _build_std_pipeline(self):
+        if PaddleOCR is None:  # pragma: no cover - runtime fallback
+            logger.warning("PaddleOCR fallback is not installed.")
+            return None
+
+        if self._pipeline_kwargs:
+            logger.warning(
+                "Falling back to PaddleOCR. Ignoring PaddleOCRVL-only kwargs: %s",
+                self._pipeline_kwargs,
+            )
+
+        return PaddleOCR(use_angle_cls=True, lang="en")
+
+    def _run_std_ocr(self, image_path: str):
+        try:
+            return self._pipeline.ocr(image_path)
+        except TypeError:
+            logger.debug("PaddleOCR.ocr(image_path) failed; retrying with predict(image_path).", exc_info=True)
+            return self._pipeline.predict(image_path)
 
     def _extract_from_vl(self, ocr_outputs) -> OCRExecutionResult:
         filtered_tokens: List[OCRToken] = []
@@ -144,7 +192,21 @@ class PaddleOCRVLPipeline:
         if not ocr_outputs:
             return OCRExecutionResult(tokens=[], combined_text="")
 
-        # paddleocr returns [results] when given a single image path
+        if hasattr(ocr_outputs, "to_dict"):
+            ocr_outputs = ocr_outputs.to_dict()
+
+        if isinstance(ocr_outputs, dict):
+            pages = ocr_outputs.get("pages")
+            if isinstance(pages, list):
+                return self._extract_std_pages(pages)
+            results = ocr_outputs.get("results")
+            if results is not None:
+                ocr_outputs = results
+
+        if not ocr_outputs:
+            return OCRExecutionResult(tokens=[], combined_text="")
+
+        # paddleocr 2.x returns [results] when given a single image path
         if isinstance(ocr_outputs[0], list):
             lines = ocr_outputs[0]
         else:
@@ -168,6 +230,26 @@ class PaddleOCRVLPipeline:
 
         combined_text = " ".join(combined_text_parts).strip()
         return OCRExecutionResult(tokens=filtered_tokens, combined_text=combined_text)
+
+    def _extract_std_pages(self, pages: List[dict]) -> OCRExecutionResult:
+        filtered_tokens: List[OCRToken] = []
+        combined_text_parts: List[str] = []
+
+        for page in pages:
+            for line in page.get("lines", []):
+                text = str(line.get("text", "")).strip()
+                score = float(line.get("score", 1.0) or 0.0)
+                if not text or score < self._score_threshold:
+                    continue
+                box = line.get("bbox") or line.get("box") or line.get("polygon") or []
+                box = [list(map(float, pt)) for pt in box] if box else []
+                filtered_tokens.append(OCRToken(text=text, score=score, box=box))
+                combined_text_parts.append(text)
+
+        return OCRExecutionResult(
+            tokens=filtered_tokens,
+            combined_text=" ".join(combined_text_parts).strip(),
+        )
 
     @staticmethod
     def _to_dict(doc) -> dict:

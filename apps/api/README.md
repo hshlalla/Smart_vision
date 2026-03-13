@@ -1,7 +1,7 @@
 # Smart Vision API
 
 `apps/api` 디렉터리는 Smart Vision 하이브리드 검색 파이프라인을 REST API 형태로 제공하는 FastAPI 서비스입니다.  
-PaddleOCR-VL, BGE-VL, BGE-M3, Milvus를 활용해 장비 이미지와 텍스트를 동시에 검색하거나 신규 데이터를 색인할 수 있습니다.  
+PaddleOCR-VL, Qwen3-VL-Embedding-2B, BGE-M3, Qwen3-VL-Reranker-2B, Qwen3-VL-2B-Instruct, Milvus를 활용해 장비 이미지와 텍스트를 동시에 검색하거나 신규 데이터를 색인할 수 있습니다.  
 또한 LangChain 기반 tool-calling 에이전트(`/api/v1/agent/chat`)를 통해 “이미지 업로드 → 제품 추정 → 웹에서 정보/가격 보강 → (옵션) Milvus 업데이트” 흐름을 제공합니다.
 
 ---
@@ -70,6 +70,11 @@ apps/api/
    ```bash
    pip install -r requirements.txt
    ```
+   - PaddleOCR-VL을 쓰려면 Paddle 계열 버전을 함께 맞춰야 합니다.
+   - 현재 저장소 기준 권장 조합은 `paddleocr 3.4.x`, `paddlex 3.4.x` 입니다.
+   - `paddlepaddle`은 플랫폼별로 다릅니다: Linux/Windows/Apple Silicon은 `3.1.x`, Intel Mac은 `3.0.x`를 사용합니다.
+   - Intel Mac에서는 `PaddleOCRVL`이 요구하는 fused op가 없어 표준 `PaddleOCR` 폴백 경로로 동작합니다.
+   - 기존에 다른 major/minor 버전이 깔려 있었다면 가상환경을 새로 만들거나 관련 패키지를 제거 후 재설치하세요.
 
 3. **Milvus 연결**
    - 기본 URI는 `tcp://standalone:19530` 입니다(docker network 내부 기준).
@@ -150,8 +155,8 @@ curl -X POST "http://localhost:8000/api/v1/agent/chat" \
 
 ## 📦 참고
 
-- PaddleOCR-VL/BGE-VL/BGE-M3 모델은 최초 실행 시 자동으로 가중치를 다운로드합니다.
-- Milvus 컬렉션(`image_parts`, `text_parts`, `attrs_parts`)은 API 구동 시 자동 생성됩니다.
+- PaddleOCR-VL/Qwen3-VL-Embedding-2B/BGE-M3/Qwen3-VL-Reranker-2B/Qwen3-VL-2B-Instruct 모델은 최초 실행 시 자동으로 가중치를 다운로드합니다.
+- Milvus 컬렉션(`qwen3_vl_image_parts`, `bge_m3_text_parts`, `attrs_parts_v2`, `bge_m3_model_texts`, `bge_m3_catalog_chunks`)은 API 구동 시 자동 생성됩니다.
 - 프론트(`apps/web/`)에서 접근하려면 CORS 설정(`CORS_ORIGINS`)이 필요할 수 있습니다.
 - 운영 배포 시에는 `scripts/run_prod.sh` 또는 Dockerfile을 활용해 주세요.
 

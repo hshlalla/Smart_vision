@@ -58,8 +58,13 @@ class HybridFusionRetriever:
     def rerank(self, query: dict, candidates: List[dict]) -> List[dict]:
         """Rerank candidates using the configured cross encoder."""
         scores = self._cross_encoder.score(query, candidates)
-        sorted_pairs = sorted(zip(candidates, scores), key=lambda x: x[1], reverse=True)
-        return [candidate for candidate, _ in sorted_pairs]
+        scored_candidates = []
+        for candidate, score in zip(candidates, scores):
+            updated = dict(candidate)
+            updated["reranker_score"] = float(score)
+            scored_candidates.append(updated)
+        sorted_pairs = sorted(scored_candidates, key=lambda item: item.get("reranker_score", 0.0), reverse=True)
+        return sorted_pairs
 
     def verify(self, candidate: dict, ocr_text: str, part_number: str, threshold: float = 0.75) -> bool:
         """Basic verification that checks OCR similarity and part number match."""

@@ -57,7 +57,7 @@ class CatalogRagService:
     """Indexes and retrieves internal catalog chunks."""
 
     def __init__(self) -> None:
-        self._collection_name = "catalog_chunks"
+        self._collection_name = "bge_m3_catalog_chunks"
         self._collection: Collection | None = None
         self._text_encoder: BGEM3TextEncoder | None = None
         self._ocr_engine: Any | None = None
@@ -165,7 +165,10 @@ class CatalogRagService:
                     tmp_img.write(raw)
                     img_path = Path(tmp_img.name)
                 try:
-                    ocr_res = engine.ocr(str(img_path), cls=True)
+                    try:
+                        ocr_res = engine.ocr(str(img_path))
+                    except TypeError:
+                        ocr_res = engine.predict(str(img_path))
                 finally:
                     img_path.unlink(missing_ok=True)
                 if not ocr_res:

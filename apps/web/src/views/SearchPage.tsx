@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import {
+  AspectRatio,
   Badge,
   Button,
   Card,
@@ -19,6 +20,21 @@ import { useAuth } from "../state/auth";
 import { apiFetchJson, toBase64 } from "../utils/api";
 
 type SearchResult = Record<string, any>;
+
+function resolveMediaUrl(imagePath: string | null | undefined): string | null {
+  if (!imagePath) return null;
+  const normalized = String(imagePath).trim();
+  if (!normalized) return null;
+  if (/^https?:\/\//i.test(normalized)) return normalized;
+
+  const marker = "/media/";
+  const idx = normalized.lastIndexOf(marker);
+  const relative = idx >= 0 ? normalized.slice(idx + marker.length) : normalized.split("/media/").pop() || "";
+  if (!relative) return null;
+
+  const apiBase = ((import.meta as any).env?.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/+$/, "");
+  return `${apiBase}/media/${relative.replace(/^\/+/, "")}`;
+}
 
 export default function SearchPage() {
   const auth = useAuth();
@@ -154,33 +170,66 @@ export default function SearchPage() {
         ) : (
           results.map((r, idx) => (
             <Card key={idx} withBorder radius="lg" p="lg">
-              <Group justify="space-between" align="flex-start">
-                <Stack gap={2}>
-                  <Text fw={700}>{String(r.model_id || "unknown")}</Text>
-                  <Text size="sm" c="dimmed">
-                    {String(r.description || "")}
-                  </Text>
-                </Stack>
-                <Badge variant="light">
-                  score {typeof r.score === "number" ? r.score.toFixed(3) : String(r.score ?? "-")}
-                </Badge>
-              </Group>
-              <Group gap="xs" mt="sm">
-                {r.maker ? <Badge variant="outline">maker: {String(r.maker)}</Badge> : null}
-                {r.part_number ? <Badge variant="outline">pn: {String(r.part_number)}</Badge> : null}
-                {r.category ? <Badge variant="outline">cat: {String(r.category)}</Badge> : null}
-                {r.lexical_hit ? <Badge color="grape" variant="light">lexical</Badge> : null}
-              </Group>
-              {r.ocr_text ? (
-                <Text size="sm" c="dimmed" mt="sm" lineClamp={3}>
-                  OCR: {String(r.ocr_text)}
-                </Text>
-              ) : null}
-              {r.caption_text ? (
-                <Text size="sm" c="dimmed" mt={6} lineClamp={2}>
-                  Caption: {String(r.caption_text)}
-                </Text>
-              ) : null}
+              <Grid gutter="md">
+                <Grid.Col span={{ base: 12, sm: 4 }}>
+                  {(() => {
+                    const firstImage = Array.isArray(r.images) ? r.images[0] : null;
+                    const mediaUrl = resolveMediaUrl(firstImage?.image_path);
+                    if (!mediaUrl) {
+                      return (
+                        <AspectRatio ratio={4 / 3}>
+                          <Card withBorder radius="md" p="md">
+                            <Stack h="100%" justify="center" align="center" gap={4}>
+                              <IconPhoto size={24} />
+                              <Text size="xs" c="dimmed">
+                                이미지 없음
+                              </Text>
+                            </Stack>
+                          </Card>
+                        </AspectRatio>
+                      );
+                    }
+                    return (
+                      <AspectRatio ratio={4 / 3}>
+                        <img
+                          src={mediaUrl}
+                          alt={String(r.model_id || "search-result")}
+                          style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 12 }}
+                        />
+                      </AspectRatio>
+                    );
+                  })()}
+                </Grid.Col>
+                <Grid.Col span={{ base: 12, sm: 8 }}>
+                  <Group justify="space-between" align="flex-start">
+                    <Stack gap={2}>
+                      <Text fw={700}>{String(r.model_id || "unknown")}</Text>
+                      <Text size="sm" c="dimmed">
+                        {String(r.description || "")}
+                      </Text>
+                    </Stack>
+                    <Badge variant="light">
+                      score {typeof r.score === "number" ? r.score.toFixed(3) : String(r.score ?? "-")}
+                    </Badge>
+                  </Group>
+                  <Group gap="xs" mt="sm">
+                    {r.maker ? <Badge variant="outline">maker: {String(r.maker)}</Badge> : null}
+                    {r.part_number ? <Badge variant="outline">pn: {String(r.part_number)}</Badge> : null}
+                    {r.category ? <Badge variant="outline">cat: {String(r.category)}</Badge> : null}
+                    {r.lexical_hit ? <Badge color="grape" variant="light">lexical</Badge> : null}
+                  </Group>
+                  {r.ocr_text ? (
+                    <Text size="sm" c="dimmed" mt="sm" lineClamp={3}>
+                      OCR: {String(r.ocr_text)}
+                    </Text>
+                  ) : null}
+                  {r.caption_text ? (
+                    <Text size="sm" c="dimmed" mt={6} lineClamp={2}>
+                      Caption: {String(r.caption_text)}
+                    </Text>
+                  ) : null}
+                </Grid.Col>
+              </Grid>
             </Card>
           ))
         )}
