@@ -1,6 +1,25 @@
 Smart Vision Model Release Notes
 ================================
 
+## 2.3.0
+
+### Added
+- `Qwen3-VL-Embedding-2B` 기반 이미지 임베더를 추가했습니다.
+- `Qwen3-VL-Reranker-2B` 기반 multimodal reranker를 추가했습니다.
+- 검색 랭킹 규칙 회귀 방지를 위한 테스트를 추가했습니다.
+- `packages/model/tests/test_search_ranking.py`
+- `packages/model/tests/test_ocr_pipeline.py`
+
+### Changed
+- 이미지 검색 스택을 `BGE-VL-large`에서 `Qwen3-VL-Embedding-2B`로 전환했습니다.
+- 텍스트 검색 스택은 `BGE-M3`를 유지하고, image/text 혼합 구조 위에 `Qwen3-VL-Reranker-2B` top-N 재정렬을 적용하도록 검색 경로를 개편했습니다.
+- 한글 lexical tokenization, exact field boost, low-score cutoff를 추가해 exact 문자열 질의에서 순위 안정성을 높였습니다.
+
+### Fixed
+- `PaddleOCRVL` 초기화 실패 또는 `fused_rms_norm_ext` 부재 시 표준 `PaddleOCR`로 안전하게 폴백하도록 보강했습니다.
+- PaddleOCR 3.x의 `ocr()`/`predict()` 호출 차이와 반환 포맷 차이로 인해 OCR 경로가 실패하던 문제를 완화했습니다.
+- 이전에는 실질적으로 비활성 상태였던 rerank 인터페이스를 실제 learned reranker 경로로 연결했습니다.
+
 ## 2.2.0
 
 ### Added

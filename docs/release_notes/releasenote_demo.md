@@ -1,6 +1,12 @@
 Smart Vision Demo Release Notes
 ===============================
 
+## 2.3.0
+
+### Changed
+- 이번 배포에서도 `apps/demo` 런타임 코드 변경은 없습니다.
+- 다만 저장소 기준 버전은 `Qwen3-VL` 이미지 검색, `BGE-M3` 텍스트 검색, multimodal reranking, OCR 전략 재검토 문서화와 맞춰 동기화했습니다.
+
 ## 2.2.0
 
 ### Changed

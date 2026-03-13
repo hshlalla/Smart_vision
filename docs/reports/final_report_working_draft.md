@@ -331,7 +331,7 @@ The design also has explicit limits.
 
 - OCR remains brittle on reflective, blurred, or distant labels.
 - Generic multimodal embeddings may miss domain-specific distinctions.
-- The current system does not yet include a full object detector or cross-encoder reranker.
+- The current system does not yet include a full object detector, and the newly integrated multimodal reranker has not yet been validated through a full end-to-end benchmark.
 - Full quantitative automation for hybrid ablation, OCR CER, and latency percentiles is not yet complete.
 
 These are not accidental omissions. They are the main boundaries that separate the implemented MVP from the planned next stage of refinement.
@@ -409,13 +409,42 @@ This is technically significant for the project because it operationalises the r
 The perception and representation stages use practical off-the-shelf models:
 
 - PaddleOCR-based pipelines for OCR,
-- BGE-VL for image embeddings,
+- Qwen3-VL-Embedding-2B for image embeddings,
 - BGE-M3 for text embeddings,
-- optional caption generation using GPT or Qwen-based backends.
+- Qwen3-VL-Reranker-2B for top-N reranking,
+- optional caption generation using Qwen3-VL-2B-Instruct or GPT-based backends.
 
 The design choice here is pragmatic. The project does not claim to outperform specialised models through novel training. Instead, it uses strong available components and focuses on how they are orchestrated, how their outputs are normalised, and how their uncertainty is managed.
 
 The OCR pipeline includes fallback behaviour and text normalisation. Captioning is optional and environment-dependent rather than mandatory. This matters because one of the practical lessons from implementation was that some channels should be treated as conditional helpers rather than assumptions.
+
+An important late-stage design clarification is that the project did not previously use a true learned reranker in the deployed search path. Earlier versions exposed a reranking interface, but the actual behaviour was still dominated by first-stage dense retrieval and lexical/specification-aware score blending. This matters because it explains why the migration to the Qwen3-VL stack is not simply a model-name update. The substantive change is that image embeddings move from BGE-VL to Qwen3-VL-Embedding-2B and that a real multimodal reranking stage is introduced via Qwen3-VL-Reranker-2B.
+
+The text side remains intentionally more conservative. Although it would be possible to move both image and text channels fully into a Qwen3-VL embedding stack, the current implementation retains BGE-M3 for OCR text, metadata text, and caption text. The rationale is domain-specific rather than purely architectural. In used-parts identification, exact lexical evidence such as maker names, model numbers, and short identifiers remains highly important. A strong multilingual text retriever is therefore still useful even when the image stack is modernised.
+
+This led to a mixed design rather than a fully unified one:
+
+- Qwen3-VL-Embedding-2B for image-side representation,
+- BGE-M3 for text-side representation,
+- Qwen3-VL-Reranker-2B for multimodal top-N reranking,
+- Qwen3-VL-2B-Instruct for caption generation.
+
+This mixed design is defensible because it balances three competing pressures:
+
+- lower latency and better multimodal consistency on the image side,
+- stability for OCR and metadata retrieval on the text side,
+- and a realistic migration path from the earlier system without claiming unsupported performance gains.
+
+Another important unresolved design question concerns OCR. Qwen3-VL is reported to be strong at OCR-like and document-understanding tasks, which raises the possibility that an explicit OCR engine may eventually be unnecessary. However, in this specific domain the value of OCR is not only semantic understanding but also exact string preservation. A visually capable language model may understand that a label is relevant while still paraphrasing or normalising it, whereas classical OCR may preserve exact model strings more directly when the image is legible. For that reason, OCR is not removed outright at this stage.
+
+Instead, the report now treats OCR strategy as an explicit experimental question. Two ablation-style configurations are justified:
+
+- a Qwen-centred configuration in which Qwen3-VL handles most visual interpretation and OCR is reduced or removed,
+- and a hybrid configuration in which Qwen3-VL handles image embedding and reranking while OCR and BGE-M3 remain as supporting evidence channels.
+
+To make this decision measurable rather than anecdotal, the next evaluation stage fixes a 1000-item similar-product dataset, uses 900 items for indexing and 100 items for held-out queries, and compares OCR-off, OCR-on, reranker-off, and text-light variants under the same retrieval protocol. This is important because the real design question is not whether one model family sounds stronger in the abstract, but which configuration produces the best shortlist quality under visually confusing, near-duplicate conditions.
+
+This design discussion strengthens the report because it shows that the architecture is not a collection of arbitrary tools. Each component is retained, replaced, or deferred for a reason tied to observed engineering constraints and domain evidence.
 
 ### 4.5 Catalog RAG and Tool-Oriented Agent Integration
 
@@ -607,6 +636,32 @@ The correct interpretation at present is:
 - the measurement protocol is defined,
 - bottleneck-oriented profiling is now feasible,
 - but the quantitative percentile summary remains future work.
+
+### 5.6.1 Planned Retrieval Ablation for Final Design Choice
+
+One design decision remains intentionally open and should be presented as an empirical comparison rather than as a closed claim. The key question is whether the system should continue to use explicit OCR and a dedicated text retriever as first-class signals, or whether the newer Qwen3-VL family is strong enough to absorb more of that responsibility.
+
+The report therefore motivates two planned ablations:
+
+`Configuration A: Qwen-centred retrieval.`  
+Qwen3-VL-Embedding-2B for image retrieval, Qwen3-VL-Reranker-2B for reranking, Qwen3-VL-2B-Instruct for captioning, with OCR reduced to a minimal fallback or removed.
+
+`Configuration B: Mixed retrieval.`  
+Qwen3-VL-Embedding-2B for image retrieval, Qwen3-VL-Reranker-2B for reranking, Qwen3-VL-2B-Instruct for captioning, while retaining OCR and BGE-M3 as explicit text evidence channels.
+
+The purpose of this comparison is not merely model benchmarking. It directly tests a system-design hypothesis:
+
+- whether exact identifier text remains valuable enough to justify the added pipeline complexity,
+- or whether a more unified multimodal Qwen-based stack provides a better practical trade-off.
+
+The comparison should evaluate:
+
+- Top-1 and Top-5 retrieval quality,
+- exact model-number and maker matching behaviour,
+- latency and resource cost,
+- and qualitative robustness on noisy user photographs.
+
+This is an important addition to the report because it converts what might otherwise look like ad hoc engineering choices into a clear, testable design rationale.
 
 ### 5.7 Engineering Validation Results
 

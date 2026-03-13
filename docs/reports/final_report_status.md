@@ -140,19 +140,62 @@ Email: hshlalla@naver.com
 
 2. 전처리 파이프라인
 - OCR: `PaddleOCRVLPipeline` (fallback to PaddleOCR)
-- Image embedding: BGE-VL
-- Text embedding: BGE-M3
-- Captioning: GPT/Qwen (환경변수 기반 on/off/백엔드 선택)
+- Image embedding: `Qwen3-VL-Embedding-2B`
+- Text embedding: `BGE-M3`
+- Reranker: `Qwen3-VL-Reranker-2B`
+- Captioning: `Qwen3-VL-2B-Instruct` (환경변수 기반 on/off/백엔드 선택)
 
 3. 랭킹/퓨전
 - dense score(image/ocr/caption/text_query)
 - lexical score
 - spec match score (예: `16V`, `3A`, part number)
-- 최종 blend 점수로 Top-K 정렬
+- 최종 blend 점수 + `Qwen3-VL-Reranker-2B` top-N 재정렬
+
+7. 최신 모델 스택 반영(2026-03-13)
+- 초기 구현은 `BGE-VL-large` + `BGE-M3` 중심이었지만, CPU/저사양 환경에서 지연이 커 실사용 응답성이 떨어졌다.
+- 이에 따라 하이브리드 검색 스택을 `Qwen3-VL-Embedding-2B`(image embedding), `BGE-M3`(text embedding), `Qwen3-VL-Reranker-2B`(re-ranking), `Qwen3-VL-2B-Instruct`(captioning) 조합으로 재구성했다.
+- 이 변경은 최신 Qwen3-VL 계열을 이미지 표현과 cross-modal reranking에 사용하되, 텍스트 채널은 기존에 검증된 `BGE-M3`를 유지해 OCR/metadata 검색 안정성을 지키려는 절충 설계를 반영한 것이다.
+- 모델 교체로 인해 Milvus 벡터 공간과 차원이 일부 바뀌므로 기존 BGE-VL 기반 이미지 컬렉션은 재사용하지 않고, 새 컬렉션(`qwen3_vl_image_parts`, `bge_m3_*`)으로 분리해 재인덱싱하는 전략을 채택했다.
+- 최종보고서에는 단순히 "최신 모델을 사용했다"가 아니라, 왜 BGE 스택에서 Qwen3-VL 스택으로 옮겼는지, 그리고 운영 제약(CPU latency, model family consistency, reranker integration) 때문에 어떤 설계 결정을 했는지를 명시해야 한다.
+
+8. 설계 질의응답 기반 보강 근거(2026-03-13)
+- 질문 1: "기존 파이프라인에서 실제 reranker를 쓰고 있었는가?"  
+  답: 아니었다. 기존 구조는 `BGE-VL-large` 이미지 임베딩 + `BGE-M3` 텍스트 임베딩 + lexical/spec 보정으로 정렬했고, `fusion_retriever`의 rerank 인터페이스는 있었지만 실제 cross-encoder는 `_noop_cross_encoder`라 실질적인 2-stage re-ranking은 없었다.
+- 질문 2: "이미 `Qwen3-VL-2B-Instruct`를 캡셔닝에 쓰고 있었다면 변화 폭이 큰가?"  
+  답: 캡션 경로 자체는 이미 Qwen 계열을 쓰고 있었으므로 변화의 핵심은 captioner가 아니라 image embedding과 reranking 단계였다. 즉 체감상 중요한 변화는 `BGE-VL` 제거와 실제 multimodal reranker 도입이다.
+- 질문 3: "텍스트 인코더도 Qwen3-VL 계열로 통일해야 하는가?"  
+  답: 반드시 그렇지는 않다. OCR, maker, part number, description처럼 exact lexical evidence가 중요한 부품 도메인에서는 `BGE-M3`를 유지하는 편이 안전하다. 따라서 현재 설계는 image 쪽은 Qwen3-VL, text 쪽은 `BGE-M3`를 유지하는 혼합 전략을 채택했다.
+- 질문 4: "Qwen3-VL이 OCR에 강하다면 OCR 모델을 없애도 되는가?"  
+  답: 바로 단정하지 않았다. Qwen3-VL은 OCR/문서 이해 능력이 강하지만, 부품 검색에서는 serial, model name, maker text 같은 exact string이 중요하므로 OCR 제거 여부는 실험으로 판단해야 한다. 현 시점에서는 OCR을 보조 evidence/fallback으로 유지하는 편이 더 방어적이다.
+- 질문 5: "YOLO로 물체를 크롭한 뒤 OCR을 써야 하는가?"  
+  답: 단일 부품 사진 중심이라면 처음부터 YOLO를 필수로 넣는 것은 과설계일 수 있다. 복수 물체/배경 잡음/라벨 영역이 매우 작은 경우에만 후보 실험으로 두는 것이 적절하다.
+
+9. 비교 실험 계획(설계 선택을 위한 ablation)
+- 실험 A: `Qwen3-VL-Embedding-2B` + `Qwen3-VL-Reranker-2B` + `Qwen3-VL-2B-Instruct`를 중심으로 사용하고, OCR은 제거하거나 최소한의 fallback으로만 유지한다.
+- 실험 B: `Qwen3-VL-Embedding-2B` + `Qwen3-VL-Reranker-2B` + `Qwen3-VL-2B-Instruct` + `BGE-M3` + OCR을 함께 유지한다.
+- 평가 데이터셋: 유사한 외형의 제품 1000개를 고정하고, 900개는 index set, 100개는 held-out test/query set으로 사용한다.
+- 비교 지표:
+  - Top-K retrieval quality
+  - exact part number / maker / short label match recall
+  - latency (indexing/search)
+  - 실사용 관점의 응답 안정성
+- 기대 차이:
+  - 실험 A는 파이프라인 단순화와 모델 패밀리 일관성이 강점이다.
+  - 실험 B는 exact text evidence를 더 안정적으로 활용할 가능성이 높다.
+- 보고서 서술 포인트:
+  - "Qwen3-VL이 최신 SOTA 계열이라 무조건 교체"가 아니라,
+  - "부품 검색 도메인에서 exact OCR evidence의 가치와 multimodal consistency 사이의 trade-off를 비교 실험으로 검증한다"는 점을 명시해야 한다.
+
+6. 검색 랭킹 보정(2026-03-13)
+- 한글 질의 토큰화 지원을 추가했다. 기존 lexical 토크나이저가 영문/숫자만 인식해 `홍수훈` 같은 한국어 질의는 exact/substring 보정이 거의 반영되지 않았다.
+- exact substring match의 가중치를 높였다. 실제 사용자 기대는 "등록된 설명/제조사/모델명과 질의가 그대로 일치하면 상위로 와야 한다"는 것이므로, dense similarity만으로 순위를 정하는 것은 UX와 맞지 않았다.
+- `model_id`, `maker`, `part_number`, `description` 필드에 대한 exact/partial match boost를 추가했다. 이는 구조화 메타데이터를 단순 저장 용도뿐 아니라 ranking evidence로 활용하도록 한 조치다.
+- 매우 낮은 점수 후보를 제거하는 최소 점수 컷오프를 추가했다. 이전에는 절대 점수가 0.12 수준이어도 반환 후보군 내부 상대순위 때문에 1위가 될 수 있었는데, 이는 사용자가 "관련 없는 결과가 1위"라고 느끼게 만드는 원인이었다.
+- 이 변경은 멀티모달 dense retrieval만으로는 open-world 장비 검색의 사용자 기대를 충족하기 어렵고, 특히 사람 이름/브랜드명/짧은 부품명처럼 exact lexical evidence가 강한 질의에서는 명시적 규칙 기반 보정이 필요하다는 구현 교훈을 반영한다.
 
 4. Milvus 컬렉션
-- `image_parts`, `text_parts`, `attrs_parts`, `model_texts`, `caption_parts`
-- Catalog: `catalog_chunks`
+- `qwen3_vl_image_parts`, `bge_m3_text_parts`, `attrs_parts_v2`, `bge_m3_model_texts`, `bge_m3_caption_parts`
+- Catalog: `bge_m3_catalog_chunks`
 - Counter: `sv_counters`
 
 5. 안정성 강화
