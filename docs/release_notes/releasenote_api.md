@@ -1,6 +1,28 @@
 Smart Vision API Release Notes
 ===============================
 
+## 2.4.0
+
+### Added
+- 비동기 인덱싱 task API를 추가했습니다.
+- `POST /api/v1/hybrid/index/confirm`는 즉시 `task_id`를 반환하고 실제 인덱싱은 백그라운드에서 진행합니다.
+- `GET /api/v1/hybrid/index/tasks/{task_id}`로 상태를 폴링할 수 있습니다.
+- `index/preview`에 메타 생성 모드와 label-only OCR 보조 입력을 추가했습니다.
+- agent chat 응답에 내부 매칭 이미지가 프런트에서 표시되도록 UI 연동을 보강했습니다.
+- Search UI에 reranker on/off 토글을 추가했습니다.
+
+### Changed
+- 텍스트-only 질의는 경량 `BGE-M3 + model collection` 경로로 분리했습니다.
+- Apple Silicon 대응을 위해 PyTorch 경로가 `cuda -> mps -> cpu` 순으로 디바이스를 선택합니다.
+- 메타/캡션 생성은 `LOCAL_MODE`에 따라 GPT 또는 Qwen 우선 전략을 따르도록 정리했습니다.
+- `model_id` 카운터 저장소를 Milvus 컬렉션에서 SQLite로 변경했습니다.
+- 에이전트의 part number 질의는 정규화(`91200 4F310 == 91200-4F310`) 후 내부 검색을 우선 사용합니다.
+
+### Fixed
+- text-only fast path 검색 결과에 이미지가 비어 있던 문제를 수정했습니다.
+- agent chat 화면이 내부 검색 매칭 이미지 정보를 렌더링하지 않던 문제를 수정했습니다.
+- preview / warmup / counters 관련 Milvus 초기화 오류를 정리했습니다.
+
 ## 2.3.0
 
 ### Added

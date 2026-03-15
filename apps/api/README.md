@@ -1,177 +1,249 @@
 # Smart Vision API
 
-`apps/api` 디렉터리는 Smart Vision 하이브리드 검색 파이프라인을 REST API 형태로 제공하는 FastAPI 서비스입니다.  
-PaddleOCR-VL, Qwen3-VL-Embedding-2B, BGE-M3, Qwen3-VL-Reranker-2B, Qwen3-VL-2B-Instruct, Milvus를 활용해 장비 이미지와 텍스트를 동시에 검색하거나 신규 데이터를 색인할 수 있습니다.  
-또한 LangChain 기반 tool-calling 에이전트(`/api/v1/agent/chat`)를 통해 “이미지 업로드 → 제품 추정 → 웹에서 정보/가격 보강 → (옵션) Milvus 업데이트” 흐름을 제공합니다.
+`apps/api` provides the FastAPI backend for Smart Vision.
+It serves hybrid search, async indexing, authentication, agent chat, catalog search, and media files.
 
----
+## Main Capabilities
 
-## 📁 디렉터리 구조
-
-```
-apps/api/
-├── smart_vision_api/
-│   ├── main.py              # FastAPI 애플리케이션 엔트리포인트
-│   ├── api/
-│   │   └── v1/
-│   │       ├── hybrid.py    # 하이브리드 검색 REST 엔드포인트
-│   │       ├── agent.py     # 에이전트 챗 엔드포인트
-│   │       └── auth.py      # 로그인/토큰 엔드포인트
-│   ├── core/
-│   │   ├── config.py        # 설정/환경변수 관리
-│   │   ├── auth.py          # 간단 토큰 인증(옵션)
-│   │   └── logger.py        # 공통 로거
-│   ├── schemas/
-│   │   ├── payload.py       # 하이브리드 요청/응답
-│   │   ├── agent.py         # 에이전트 요청/응답
-│   │   └── auth.py          # 로그인 요청/응답
-│   └── services/
-│       ├── hybrid.py        # HybridSearchOrchestrator 서비스 래퍼
-│       ├── agent.py         # tool-calling agent
-│       ├── web_search.py    # open-world 검색(DDG HTML)
-│       └── gparts.py        # 예제 가격 소스(옵션)
-├── docs/                    # 릴리스 노트 등 문서
-├── logs/                    # 실행 로그 출력 디렉터리
-├── requirements.txt         # API 의존성 목록
-├── pyproject.toml           # 패키징 설정
-├── Dockerfile               # 컨테이너 빌드 설정
-├── docker-compose.yml       # Milvus + API 로컬 실행 예시
-├── .env                     # 환경변수 템플릿
-└── scripts/                 # 실행 스크립트 (run_dev.sh 등)
-```
-
----
-
-## 🚀 제공 기능
-
-- **Auth (옵션)**  
+- Auth
   - `GET /api/v1/auth/status`
   - `POST /api/v1/auth/login`
   - `GET /api/v1/auth/me`
+- Hybrid indexing and search
+  - `POST /api/v1/hybrid/index/preview`
+  - `POST /api/v1/hybrid/index/confirm`
+  - `GET /api/v1/hybrid/index/tasks/{task_id}`
+  - `POST /api/v1/hybrid/search`
+- Agent bot
+  - `POST /api/v1/agent/chat`
+- Catalog RAG
+  - `POST /api/v1/catalog/index_pdf`
+  - `POST /api/v1/catalog/search`
+- Media serving
+  - `/media/{filename}`
 
-- **Hybrid Search**
-  - `POST /api/v1/hybrid/index` : 이미지 + 메타데이터를 전처리 후 Milvus 저장 (`model_id` 필수)
-  - `POST /api/v1/hybrid/search` : 텍스트/이미지 하이브리드 검색
+## Current Behavior
 
-- **Agent Bot (open-world + Milvus enrichment)**
-  - `POST /api/v1/agent/chat` : 이미지/질문 → (smart vision 검색 tool) → 웹 검색/가격 보강 → (옵션) Milvus 업데이트
-  - 에이전트의 “기존 모델 재사용” 기준은 `score >= 0.75` 입니다.
+### Indexing Flow
 
----
+1. `preview`
+   - Builds a metadata draft from uploaded images.
+   - Backend can be GPT or local Qwen depending on configuration and UI override.
+   - Optional label-only OCR inputs can be uploaded from the UI and supplied as stronger evidence.
+   - Label OCR is only used as preview-time evidence for metadata generation.
+2. User review
+   - User can edit maker, part number, category, description, product info, and price.
+3. `confirm`
+   - Returns immediately with `task_id`.
+   - Actual indexing runs in a background worker.
+   - Frontend polls task status until `completed` or `failed`.
+   - Task states are `queued`, `running`, `completed`, and `failed`.
 
-## 🛠️ 실행 방법
+### Search Flow
 
-1. **모델 패키지 설치**
-   ```bash
-   pip install -e ../../packages/model
-   ```
+- Text-only search
+  - Uses the lightweight `BGE-M3 + model collection` path.
+  - Returns representative images from attrs records.
+- Image search
+  - Uses the multimodal orchestrator.
+- Reranker
+  - Can be toggled from the Search UI.
+  - Still requires backend `ENABLE_RERANKER=1` to actually initialize the reranker.
 
-2. **의존성 설치**
-   ```bash
-   pip install -r requirements.txt
-   ```
-   - PaddleOCR-VL을 쓰려면 Paddle 계열 버전을 함께 맞춰야 합니다.
-   - 현재 저장소 기준 권장 조합은 `paddleocr 3.4.x`, `paddlex 3.4.x` 입니다.
-   - `paddlepaddle`은 플랫폼별로 다릅니다: Linux/Windows/Apple Silicon은 `3.1.x`, Intel Mac은 `3.0.x`를 사용합니다.
-   - Intel Mac에서는 `PaddleOCRVL`이 요구하는 fused op가 없어 표준 `PaddleOCR` 폴백 경로로 동작합니다.
-   - 기존에 다른 major/minor 버전이 깔려 있었다면 가상환경을 새로 만들거나 관련 패키지를 제거 후 재설치하세요.
+### Agent Chat
 
-3. **Milvus 연결**
-   - 기본 URI는 `tcp://standalone:19530` 입니다(docker network 내부 기준).
-   - 로컬 호스트에서 실행 중인 Milvus에 붙을 때는 `tcp://localhost:19530` 를 사용하세요.
-   - 로컬에서 빠르게 테스트하려면 `docker-compose up -d milvus` 를 사용할 수 있습니다.
+- First tries internal search for direct inventory lookup.
+- Part numbers are normalized so queries like `91200 4F310`, `91200-4F310`, and `912004F310` resolve to the same candidate.
+- If an internal match is present, the response includes identified item metadata and image data for the frontend.
+- If needed, the agent can still use external web search or catalog search.
 
-4. **API 실행 (권장: 스크립트)**
-   ```bash
-   ./scripts/run_dev.sh
-   ```
-   - `run_dev.sh`는 `apps/api/.env`를 읽어 환경변수를 자동 로드합니다.
-   - `.env`에 `OPENAI_API_KEY` 등이 있으면 별도 `export`가 필요 없습니다.
-   - 기본 포트는 `8001`입니다.
-   - OCR 실험용 스위치:
-     - `ENABLE_OCR=0`: 인덱싱/검색 OCR 모두 비활성화
-     - `ENABLE_OCR_INDEXING=0`: 인덱싱 OCR만 비활성화
-     - `ENABLE_OCR_QUERY=0`: 검색 query-time OCR만 비활성화
-   - 컬렉션 분리용 스위치:
-     - `HYBRID_IMAGE_COLLECTION`
-     - `HYBRID_TEXT_COLLECTION`
-     - `HYBRID_ATTRS_COLLECTION`
-     - `HYBRID_MODEL_COLLECTION`
-     - `HYBRID_CAPTION_COLLECTION`
+## Run
 
-5. **직접 uvicorn 실행(선택)**
-   ```bash
-   uvicorn smart_vision_api.main:app --reload --host 0.0.0.0 --port 8000 --env-file .env
-   ```
-
-6. **확인**
-   - `run_dev.sh` 실행 시: [http://localhost:8001/api/docs](http://localhost:8001/api/docs)
-   - 직접 `uvicorn --port 8000` 실행 시: [http://localhost:8000/api/docs](http://localhost:8000/api/docs)
-
----
-
-## 📡 API 사용 예시
-
-### 0. 로그인(옵션)
+### Recommended
 
 ```bash
-curl -X POST "http://localhost:8000/api/v1/auth/login" \
+cd apps/api
+source ../../.venv/bin/activate
+./scripts/run_dev.sh
+```
+
+Notes:
+
+- `run_dev.sh` loads `apps/api/.env`.
+- Default API port is `8001`.
+- It also starts the Milvus docker compose stack if available.
+
+### Direct uvicorn
+
+```bash
+uvicorn smart_vision_api.main:app --host 0.0.0.0 --port 8001 --env-file .env
+```
+
+## Important Environment Variables
+
+### Core
+
+- `MILVUS_URI`
+- `MEDIA_ROOT`
+- `MAX_IMAGE_BASE64_LENGTH`
+- `AUTH_ENABLED`
+- `AUTH_USERNAME`
+- `AUTH_PASSWORD`
+
+### OCR
+
+- `ENABLE_OCR=0`
+  - Disable OCR for both indexing and query-time search.
+- `ENABLE_OCR_INDEXING=0`
+  - Disable OCR only during indexing.
+- `ENABLE_OCR_QUERY=0`
+  - Disable OCR only during query-time search.
+
+### Metadata Preview / Caption
+
+- `LOCAL_MODE`
+  - `0`: hosted mode preferred
+  - `1`: local mode preferred
+- `METADATA_PREVIEW_BACKEND`
+  - `auto`
+  - `openai`
+  - `qwen`
+- `CAPTIONER_BACKEND`
+  - `auto`
+  - `gpt`
+  - `qwen`
+  - `none`
+
+Resolution rule:
+
+- `LOCAL_MODE=0` and `OPENAI_API_KEY` exists
+  - metadata preview: GPT
+  - captioning: GPT when captioning is enabled
+- `LOCAL_MODE=1`
+  - metadata preview: Qwen
+  - captioning: Qwen when captioning is enabled
+
+Request-scoped UI override:
+
+- The Index UI can explicitly request:
+  - `Auto`
+  - `GPT`
+  - `Local`
+- `Local` maps to the Qwen preview path.
+
+Recommended caption policy:
+
+- Current hosted/default mode:
+  - `CAPTIONER_BACKEND=gpt`
+- Later local-only experiments:
+  - `CAPTIONER_BACKEND=qwen`
+- If `CAPTIONER_BACKEND=auto`, the runner resolves:
+  - `LOCAL_MODE=1` -> `qwen`
+  - `LOCAL_MODE=0` and `OPENAI_API_KEY` present -> `gpt`
+
+### Search Quality / Performance
+
+- `ENABLE_RERANKER`
+- `WARMUP_QWEN_PREVIEW_ON_STARTUP`
+- collection names:
+  - `HYBRID_IMAGE_COLLECTION`
+  - `HYBRID_TEXT_COLLECTION`
+  - `HYBRID_ATTRS_COLLECTION`
+  - `HYBRID_MODEL_COLLECTION`
+  - `HYBRID_CAPTION_COLLECTION`
+
+## Apple Silicon Notes
+
+- PyTorch paths use `cuda -> mps -> cpu`.
+- MPS works, but heavy multimodal local inference is still much slower than a CUDA workstation.
+- For local experiments on Apple Silicon, the current practical setup is often:
+  - OCR off
+  - text-only fast path on
+  - reranker off by default
+  - GPT metadata preview for quality, or Qwen for local-only comparison
+- If OCR env flags are disabled, label OCR uploads from the UI are also bypassed at runtime.
+
+## Stored Metadata
+
+User-facing draft fields accepted by confirm:
+
+- `model_id`
+- `maker`
+- `part_number`
+- `category`
+- `description`
+- `product_info`
+- `price_value`
+
+Structured fields persisted in search/index collections are currently centered on:
+
+- `maker`
+- `part_number`
+- `category`
+- `description`
+- `metadata_text`
+- `ocr_text`
+- `caption_text`
+- `image_path`
+
+`product_info` and `price_value` currently act more like enrichment inputs than fully expanded first-class retrieval columns.
+
+## API Examples
+
+### Login
+
+```bash
+curl -X POST "http://127.0.0.1:8001/api/v1/auth/login" \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"admin123"}'
 ```
 
-### 1. 자산 색인
-```bash
-curl -X POST "http://localhost:8000/api/v1/hybrid/index" \
-  -F "image=@sample.jpg" \
-  -F "model_id=a000001" \
-  -F "maker=SmartVision" \
-  -F "part_number=PN-001" \
-  -F "category=ETCH" \
-  -F "description=example"
-```
+### Preview
 
-응답:
-```json
-{"status":"indexed"}
-```
-
-### 2. 멀티모달 검색
 ```bash
-BASE64_IMG=$(base64 -w0 query.jpg)
-curl -X POST "http://localhost:8000/api/v1/hybrid/search" \
+curl -X POST "http://127.0.0.1:8001/api/v1/hybrid/index/preview" \
   -H "Content-Type: application/json" \
-  -d "{
-        \"query_text\": \"etch chamber\",
-        \"image_base64\": \"${BASE64_IMG}\",
-        \"top_k\": 5
-      }"
+  -d '{
+    "image_base64_list": ["..."],
+    "metadata_mode": "auto"
+  }'
 ```
 
-### 3. 에이전트 챗(이미지 + 질문 → 답변 + sources)
+### Confirm
 
 ```bash
-BASE64_IMG=$(base64 -w0 query.jpg)
-curl -X POST "http://localhost:8000/api/v1/agent/chat" \
+curl -X POST "http://127.0.0.1:8001/api/v1/hybrid/index/confirm" \
   -H "Content-Type: application/json" \
-  -d "{
-        \"message\": \"이 제품 뭐야? 가격도 찾아줘\",
-        \"image_base64\": \"${BASE64_IMG}\",
-        \"update_milvus\": true
-      }"
+  -d '{
+    "image_base64_list": ["..."],
+    "metadata": {
+      "maker": "Hyundai",
+      "part_number": "91200-4F310",
+      "category": "ACTUATOR",
+      "description": "example"
+    }
+  }'
 ```
 
----
+### Search
 
-## 📦 참고
+```bash
+curl -X POST "http://127.0.0.1:8001/api/v1/hybrid/search" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query_text": "91200 4F310",
+    "top_k": 10,
+    "use_reranker": false
+  }'
+```
 
-- PaddleOCR-VL/Qwen3-VL-Embedding-2B/BGE-M3/Qwen3-VL-Reranker-2B/Qwen3-VL-2B-Instruct 모델은 최초 실행 시 자동으로 가중치를 다운로드합니다.
-- Milvus 컬렉션(`qwen3_vl_image_parts`, `bge_m3_text_parts`, `attrs_parts_v2`, `bge_m3_model_texts`, `bge_m3_catalog_chunks`)은 API 구동 시 자동 생성됩니다.
-- 프론트(`apps/web/`)에서 접근하려면 CORS 설정(`CORS_ORIGINS`)이 필요할 수 있습니다.
-- 운영 배포 시에는 `scripts/run_prod.sh` 또는 Dockerfile을 활용해 주세요.
+### Agent Chat
 
----
-
-## 🤝 문의
-
-- 문의: suhun.hong
+```bash
+curl -X POST "http://127.0.0.1:8001/api/v1/agent/chat" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "91200 4F310 찾아줘",
+    "update_milvus": false
+  }'
+```

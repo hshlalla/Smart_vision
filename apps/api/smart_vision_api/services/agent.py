@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -105,6 +106,28 @@ class SmartVisionAgentService:
         return any(k in text for k in keywords) and any(k in text for k in count_keywords)
 
     @staticmethod
+    def _normalize_part_number(value: str | None) -> str:
+        if not value:
+            return ""
+        return "".join(ch for ch in str(value).upper() if ch.isalnum())
+
+    @classmethod
+    def _extract_part_number_candidate(cls, message: str) -> str:
+        text = (message or "").strip()
+        if not text:
+            return ""
+        matches = re.findall(r"[A-Za-z0-9][A-Za-z0-9\-_ ]{3,}[A-Za-z0-9]", text)
+        candidates = [cls._normalize_part_number(match) for match in matches]
+        candidates = [candidate for candidate in candidates if len(candidate) >= 5 and any(ch.isdigit() for ch in candidate)]
+        if not candidates:
+            normalized = cls._normalize_part_number(text)
+            if len(normalized) >= 5 and any(ch.isdigit() for ch in normalized):
+                return normalized
+            return ""
+        candidates.sort(key=len, reverse=True)
+        return candidates[0]
+
+    @staticmethod
     def _format_direct_search_answer(message: str, result: dict[str, Any]) -> str:
         lines = []
         model_id = str(result.get("model_id") or "").strip()
@@ -136,7 +159,13 @@ class SmartVisionAgentService:
         cleaned = (message or "").strip()
         if not cleaned or self._is_open_world_query(cleaned):
             return None
-        results = hybrid_service.search(query_text=cleaned, image_b64=None, top_k=top_k, part_number=None)
+        part_number_candidate = self._extract_part_number_candidate(cleaned)
+        results = hybrid_service.search(
+            query_text=cleaned,
+            image_b64=None,
+            top_k=top_k,
+            part_number=part_number_candidate or None,
+        )
         if not isinstance(results, list) or not results:
             return None
         top = results[0] if isinstance(results[0], dict) else None
@@ -148,7 +177,11 @@ class SmartVisionAgentService:
             score = 0.0
         exact_boost = float(top.get("exact_field_boost") or 0.0)
         lexical_hit = bool(top.get("lexical_hit"))
-        if score < 0.72 and exact_boost < 0.30 and not lexical_hit:
+        if part_number_candidate:
+            normalized_top_part_number = self._normalize_part_number(top.get("part_number"))
+            if normalized_top_part_number != part_number_candidate:
+                return None
+        if score < 0.72 and exact_boost < 0.30 and not lexical_hit and not part_number_candidate:
             return None
         observation = {
             "threshold": 0.72,
@@ -157,6 +190,8 @@ class SmartVisionAgentService:
             "results": results[:top_k],
             "fast_path": True,
         }
+        if part_number_candidate:
+            observation["part_number_candidate"] = part_number_candidate
         return {
             "output": self._format_direct_search_answer(cleaned, top),
             "intermediate_steps": [{"tool": "hybrid_search", "args": {"query_text": cleaned, "top_k": top_k}, "observation": observation}],

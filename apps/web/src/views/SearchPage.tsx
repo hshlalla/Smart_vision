@@ -8,6 +8,7 @@ import {
   Grid,
   Group,
   NumberInput,
+  Switch,
   Stack,
   Text,
   TextInput,
@@ -37,6 +38,11 @@ type IndexTaskStatus = {
   status: string;
   model_id?: string | null;
   detail: string;
+};
+
+type PreviewResponse = {
+  draft: MetadataDraft;
+  ocr_image_indices: number[];
 };
 
 const TASK_TERMINAL_STATES = new Set(["completed", "failed"]);
@@ -76,10 +82,12 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [encodingPercent, setEncodingPercent] = useState<number | null>(null);
+  const [useReranker, setUseReranker] = useState(false);
   const [draft, setDraft] = useState<MetadataDraft>(EMPTY_DRAFT);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [taskStatus, setTaskStatus] = useState<IndexTaskStatus | null>(null);
+  const [ocrImageIndices, setOcrImageIndices] = useState<number[]>([]);
 
   const hasQuery = useMemo(() => Boolean(queryText.trim() || file), [queryText, file]);
 
@@ -111,6 +119,7 @@ export default function SearchPage() {
         image_base64,
         part_number: partNumber.trim() || null,
         top_k: topK,
+        use_reranker: useReranker,
       };
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (auth.token) headers.Authorization = `Bearer ${auth.token}`;
@@ -164,7 +173,7 @@ export default function SearchPage() {
       const image_base64 = await encodeSelectedFile();
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (auth.token) headers.Authorization = `Bearer ${auth.token}`;
-      const res = await apiFetchJson<{ draft: MetadataDraft }>("/api/v1/hybrid/index/preview", {
+      const res = await apiFetchJson<PreviewResponse>("/api/v1/hybrid/index/preview", {
         method: "POST",
         headers,
         body: JSON.stringify({ image_base64 }),
@@ -179,9 +188,11 @@ export default function SearchPage() {
         price_value: typeof res.draft.price_value === "number" ? res.draft.price_value : null,
         source: res.draft.source || "openai",
       });
+      setOcrImageIndices(Array.isArray(res.ocr_image_indices) ? res.ocr_image_indices : []);
       notifications.show({ color: "teal", title: "등록 초안 생성 완료", message: "수정 후 저장할 수 있습니다." });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      setOcrImageIndices([]);
       notifications.show({ color: "red", title: "등록 초안 생성 실패", message: msg });
     } finally {
       setPreviewLoading(false);
@@ -202,7 +213,7 @@ export default function SearchPage() {
       const res = await apiFetchJson<{ status: string; model_id?: string; task_id?: string }>("/api/v1/hybrid/index/confirm", {
         method: "POST",
         headers,
-        body: JSON.stringify({ image_base64, ...draft }),
+        body: JSON.stringify({ image_base64, ocr_image_indices: ocrImageIndices, ...draft }),
       });
       setTaskStatus(
         res.task_id
@@ -221,6 +232,9 @@ export default function SearchPage() {
       });
       if (res.model_id) {
         setDraft((prev) => ({ ...prev, model_id: res.model_id || prev.model_id }));
+      }
+      if (res.task_id) {
+        setOcrImageIndices([]);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -332,6 +346,19 @@ export default function SearchPage() {
               min={1}
               max={50}
             />
+          </Grid.Col>
+
+          <Grid.Col span={12}>
+            <Group justify="space-between" align="center">
+              <Switch
+                label="Reranker 사용"
+                checked={useReranker}
+                onChange={(event) => setUseReranker(event.currentTarget.checked)}
+              />
+              <Text size="xs" c="dimmed">
+                이미지 검색에서만 의미가 있고, 속도는 느려질 수 있습니다.
+              </Text>
+            </Group>
           </Grid.Col>
 
           <Grid.Col span={12}>

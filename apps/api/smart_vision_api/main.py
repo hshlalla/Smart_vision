@@ -85,16 +85,19 @@ app.mount("/media", StaticFiles(directory=str(media_root)), name="media")
 
 @app.on_event("startup")
 async def startup_warmup() -> None:
-    if not settings.WARMUP_TEXT_SEARCH_ON_STARTUP:
-        return
-
     def _warm() -> None:
-        try:
-            hybrid_service.warmup_text_only()
-        except Exception:
-            logger.exception("Lightweight text-only search warmup failed.")
+        if settings.WARMUP_TEXT_SEARCH_ON_STARTUP:
+            try:
+                hybrid_service.warmup_text_only()
+            except Exception:
+                logger.exception("Lightweight text-only search warmup failed.")
+        if settings.WARMUP_QWEN_PREVIEW_ON_STARTUP:
+            try:
+                hybrid_service.warmup_qwen_preview()
+            except Exception:
+                logger.exception("Qwen metadata preview warmup failed.")
 
-    threading.Thread(target=_warm, name="text-search-warmup", daemon=True).start()
+    threading.Thread(target=_warm, name="startup-warmup", daemon=True).start()
 
 
 @app.get(

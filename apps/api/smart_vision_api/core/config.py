@@ -96,6 +96,9 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "*"  # comma-separated origins or "*"
     MAX_IMAGE_BASE64_LENGTH: int = 8_000_000
     WARMUP_TEXT_SEARCH_ON_STARTUP: bool = True
+    WARMUP_QWEN_PREVIEW_ON_STARTUP: bool = True
+    LOCAL_MODE: bool = False
+    METADATA_PREVIEW_BACKEND: str = "auto"
 
     # Simple token auth (optional)
     AUTH_ENABLED: bool = False

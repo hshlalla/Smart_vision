@@ -14,6 +14,17 @@
 - `release_notes/`
   - 앱/API/모델 릴리즈 노트
 
+## Runtime Source Of Truth
+
+현재 구현 동작을 설명할 때는 아래 문서를 우선 기준으로 본다.
+
+- `README.md`
+- `apps/api/README.md`
+- `packages/model/README.md`
+- `apps/web/README.md`
+
+`docs/reports/*`는 제출용 작업 문서이므로 런타임 설명의 1차 기준으로 쓰지 않는다.
+
 ## Report Writing Rule
 
 최종보고서를 쓸 때는 아래 순서를 기준으로 본다.

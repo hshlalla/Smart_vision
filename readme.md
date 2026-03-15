@@ -1,125 +1,113 @@
 # Smart Vision Project
 
-A machine learning based intelligence platform for Smart Vision.
+Smart Vision is a local-first hybrid retrieval system for indexed industrial parts.
+It combines a FastAPI backend, a web UI, and a reusable model package for image/text retrieval,
+catalog search, async indexing, and agent-assisted lookup.
 
 ## Project Structure
 
-```
+```text
 Smart_vision/
 ├── apps/
-│   ├── web                              # Mobile-friendly web UI (primary UI)
-│   ├── api                              # FastAPI service (hybrid search + agent + catalog RAG)
-│   └── demo                             # (Optional) Gradio UI for quick debugging
+│   ├── api                              # FastAPI service
+│   ├── web                              # Main web UI
+│   └── demo                             # Optional Gradio demo
 ├── packages/
-│   └── model                            # ML/search pipeline package
-├── data/
-│   └── raw                              # Dataset root
-├── submission/                          # Submitted reports, feedback, guides, evidence
-└── docs/
-    ├── architecture/                    # Architecture and structure guides
-    ├── planning/                        # Active plans and backlog
-    ├── reports/                         # Internal report-writing notes
-    └── release_notes/                   # Release notes by component
+│   └── model                            # Hybrid retrieval / indexing package
+├── docs/                                # Architecture, plans, reports, release notes
+├── submission/                          # Submission artifacts and evidence
+└── data/                                # Local data and experiments
 ```
 
-Use canonical paths only (`apps/*`, `packages/*`, `data/*`).
+## Current Runtime Model
 
-## Features
+- Search
+  - Text-only queries use a lightweight `BGE-M3 + Milvus model collection` path.
+  - Image queries use the heavier multimodal path.
+- Indexing
+  - `preview` creates metadata drafts.
+  - `confirm` runs async background indexing and returns a `task_id`.
+  - Task state is polled from `/api/v1/hybrid/index/tasks/{task_id}`.
+- Agent chat
+  - Uses internal hybrid search first.
+  - Can still call web/catalog tools when needed.
+  - If an internal match is available, the UI now shows the matched item image.
+- Local vs hosted metadata/caption generation
+  - `LOCAL_MODE=0` and `OPENAI_API_KEY` set: GPT-backed metadata preview and captioning.
+  - `LOCAL_MODE=1`: Qwen-backed local preview/captioning.
+- OCR
+  - Controlled by env flags.
+  - Current local experiments often keep OCR disabled because Apple Silicon runs it slowly and inconsistently for this workload.
 
-- **Equipment Categorization**: Automated categorization of semiconductor equipment
-- **RESTful API**: FastAPI-based service for hybrid search + agent bot
-- **Web Front**: Mobile-friendly UI with login + chat
-- **Production Ready**: Docker support with CUDA acceleration
-
-## Getting Started
+## Recommended Local Setup
 
 ### Prerequisites
 
-- Python 3.11 or higher
-- CUDA 12.6.3 (for GPU support)
-- Docker 24.0.0 or higher
-- transformers == 4.51.x 
+- Python 3.11+
+- Docker Desktop
+- Node.js / npm
+- Apple Silicon is supported via MPS, but this is not CUDA-equivalent performance
 
-### Installation
+### Python Environment
 
-1. Create virtual environment + install packages:
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-
 pip install -e packages/model
 pip install -e apps/api
 ```
 
-### Running the Services
+### Run Order
 
-Recommended run order:
-1) Milvus (docker) → 2) API → 3) Front
-
-#### 1) Milvus (docker)
-
+1. Milvus
 ```bash
 cd apps/api
-./scripts/run_docker.sh
+export PATH="$HOME/.local/bin:$PATH"
+docker compose up -d
 ```
 
-#### 2) API Service
-
+2. API
 ```bash
 cd apps/api
+source ../../.venv/bin/activate
 ./scripts/run_dev.sh
 ```
 
-- `run_dev.sh`는 `apps/api/.env`를 읽어 환경변수를 자동으로 로드합니다.
-- 따라서 `.env`에 값이 있으면 별도 `export`는 필요 없습니다.
-- 기본 실행 포트는 `8001`입니다.
-- 직접 `uvicorn`으로 실행하려면 `.env`를 자동 로드하지 않으므로 아래처럼 실행하세요:
-```bash
-uvicorn smart_vision_api.main:app --reload --host 0.0.0.0 --port 8000 --env-file .env
-```
-
-#### 3) Front (mobile-friendly)
-
+3. Web
 ```bash
 cd apps/web
+export PATH="$HOME/.local/bin:$PATH"
 npm install
-echo 'VITE_API_BASE_URL=http://localhost:8000' > .env
-npm run dev -- --host
+npm run dev -- --host 0.0.0.0
 ```
 
-Optional: Gradio demo (debug only)
-```bash
-cd apps/demo
-./run_demo.sh
-```
+## Important Defaults
 
-## Docker Deployment
+- API default port: `8001`
+- Web dev port: `5173`
+- Milvus URI for local host: `tcp://localhost:19530`
+- Media files are served from `/media/...`
+- The frontend should point to the machine IP, not `127.0.0.1`, when accessed from another device
 
-```bash
-cd apps/api
-docker build -t smart-vision-api:latest .
-docker run -d \
-    --name smart-vision-api \
-    -p 8000:8000 \
-    -v $(pwd)/models:/app/models \
-    -v $(pwd)/logs:/app/logs \
-    smart-vision-api:latest
-```
+## Key Environment Variables
 
-## Environment Variables
+See [apps/api/README.md](/Users/studio/Downloads/project/Smart_vision/apps/api/README.md) for the full API matrix.
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `LOG_LEVEL` | Logging level (DEBUG/INFO/WARNING/ERROR) | INFO |
-| `MODEL_DIR` | Directory for model artifacts | models |
-| `LOG_DIR` | Directory for log files | logs |
-| `MILVUS_URI` | Milvus URI | `tcp://standalone:19530` |
-| `MEDIA_ROOT` | Stored image copies (attrs image_path) | `media` |
-| `AUTH_ENABLED` | Enable login/auth | `false` |
-| `OPENAI_API_KEY` | LLM key for agent bot | (required for agent) |
-| `COUNTERS_COLLECTION` | Milvus counters collection | `sv_counters` |
-Proprietary - suhun.hong
+- `AUTH_ENABLED`
+- `AUTH_USERNAME`
+- `AUTH_PASSWORD`
+- `MILVUS_URI`
+- `ENABLE_OCR`
+- `ENABLE_OCR_INDEXING`
+- `ENABLE_OCR_QUERY`
+- `LOCAL_MODE`
+- `METADATA_PREVIEW_BACKEND`
+- `CAPTIONER_BACKEND`
+- `ENABLE_RERANKER`
+- `WARMUP_QWEN_PREVIEW_ON_STARTUP`
 
-## Contact
+## Notes
 
-For questions and support, please contact suhun.hong.
+- Apple Silicon support is implemented through `cuda -> mps -> cpu` device selection for PyTorch paths.
+- The project now uses SQLite for `model_id` counters instead of a Milvus counter collection.
+- Text-only search was separated from the heavy multimodal runtime to reduce latency and memory pressure.

@@ -192,6 +192,8 @@ class HybridSearchOrchestrator:
         )
 
         backend = (os.getenv("CAPTIONER_BACKEND") or "").strip().lower()
+        local_mode_env = (os.getenv("LOCAL_MODE") or "").strip().lower()
+        local_mode = local_mode_env in {"1", "true", "yes", "y", "on"}
         enable_caption_env = os.getenv("ENABLE_CAPTIONER")
         if enable_caption_env is None:
             enable_caption = True
@@ -208,16 +210,19 @@ class HybridSearchOrchestrator:
         #   retrieval stack stays inside the Qwen3-VL family.
         # - Else if OPENAI_API_KEY exists, fall back to GPT on CPU.
         # - Else disable captioning (CPU local captioning is slow).
-        if not backend:
-            preferred_device = preferred_torch_device()
-            if preferred_device == "cuda":
+        if not backend or backend == "auto":
+            if local_mode:
                 backend = "qwen"
-            elif is_apple_mps_device(preferred_device):
-                backend = "gpt" if os.getenv("OPENAI_API_KEY") else "none"
             elif os.getenv("OPENAI_API_KEY"):
                 backend = "gpt"
             else:
-                backend = "none"
+                preferred_device = preferred_torch_device()
+                if preferred_device == "cuda":
+                    backend = "qwen"
+                elif is_apple_mps_device(preferred_device):
+                    backend = "none"
+                else:
+                    backend = "none"
 
         if backend in {"none", "off", "false", "0"}:
             logger.info("Captioner backend set to %s; captioning disabled.", backend)
@@ -566,7 +571,7 @@ class HybridSearchOrchestrator:
             db_name=config.db_name,
         )
 
-    def preprocess_and_index(self, image_path: str | Path, metadata: Dict[str, str]) -> None:
+    def preprocess_and_index(self, image_path: str | Path, metadata: Dict[str, str], *, enable_ocr: bool | None = None) -> None:
         """Run preprocessing pipeline and insert results into Milvus."""
         metadata = dict(metadata)
         model_id = metadata.get("model_id")
@@ -586,7 +591,7 @@ class HybridSearchOrchestrator:
             record = self.preprocessing(
                 str(image_path),
                 metadata,
-                enable_ocr=self.enable_ocr_indexing,
+                enable_ocr=self.enable_ocr_indexing if enable_ocr is None else bool(enable_ocr),
                 embedding_image_path=str(embedding_image_path),
             )
             t_after_preprocess = time.perf_counter()
@@ -846,6 +851,7 @@ class HybridSearchOrchestrator:
         query_text: Optional[str] = None,
         top_k: int = 10,
         part_number: Optional[str] = None,
+        use_reranker: Optional[bool] = None,
     ):
         """Execute hybrid search using provided image and/or text query."""
         if not query_image and not query_text:
@@ -1123,7 +1129,8 @@ class HybridSearchOrchestrator:
             reverse=True,
         )
         rerank_top_n = min(len(results), max(top_k, min(20, top_k * 2)))
-        if self.reranker is not None and rerank_top_n > 1:
+        reranker_enabled = self.reranker is not None if use_reranker is None else bool(use_reranker) and self.reranker is not None
+        if reranker_enabled and rerank_top_n > 1:
             try:
                 reranked = self.retriever.rerank(
                     {

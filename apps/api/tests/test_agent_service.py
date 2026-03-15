@@ -40,6 +40,39 @@ async def test_agent_service_uses_fast_path_for_text_lookup(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_agent_service_normalizes_part_number_for_fast_path(monkeypatch):
+    service = SmartVisionAgentService()
+
+    def fake_search(**kwargs):
+        assert kwargs["query_text"] == "91200 4F310"
+        assert kwargs["part_number"] == "912004F310"
+        return [
+            {
+                "model_id": "h000001",
+                "score": 0.61,
+                "maker": "Hyundai",
+                "part_number": "91200-4F310",
+                "category": "motor",
+                "description": "Hyundai motor assembly",
+                "lexical_hit": False,
+                "exact_field_boost": 0.0,
+            }
+        ]
+
+    monkeypatch.setattr("smart_vision_api.services.agent.hybrid_service.search", fake_search)
+
+    result = await service.chat(
+        message="91200 4F310",
+        request_id="",
+        max_tool_results=5,
+        update_milvus=False,
+    )
+
+    assert "91200-4F310" in result["output"]
+    assert result["intermediate_steps"][0]["observation"]["part_number_candidate"] == "912004F310"
+
+
+@pytest.mark.anyio
 async def test_agent_service_returns_collection_stats(monkeypatch):
     service = SmartVisionAgentService()
 

@@ -99,8 +99,14 @@ class PreprocessingPipeline:
         metadata_duration = time.perf_counter() - stage_start
         logger.info("Metadata normalized: %s duration=%.2fs", normalized_metadata, metadata_duration)
 
-        caption_text: str = ""
-        if self._captioner is not None:
+        caption_text: str = str(metadata.get("caption_text") or metadata.get("generated_caption") or "").strip()
+        if caption_text:
+            logger.info(
+                "Using precomputed caption text: chars=%d preview=%s",
+                len(caption_text),
+                caption_text[:120].replace("\n", " "),
+            )
+        elif self._captioner is not None:
             try:
                 stage_start = time.perf_counter()
                 caption_text = self._captioner.generate(embedding_path)

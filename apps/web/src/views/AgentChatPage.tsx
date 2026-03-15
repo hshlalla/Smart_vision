@@ -27,12 +27,30 @@ type ChatMsg = {
   content: string;
   imageName?: string;
   imagePreviewUrl?: string;
+  resultImageUrl?: string;
+  resultTitle?: string;
+  resultSubtitle?: string;
 };
 
 function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function resolveMediaUrl(imagePath: string | null | undefined): string | null {
+  if (!imagePath) return null;
+  const normalized = String(imagePath).trim();
+  if (!normalized) return null;
+  if (/^https?:\/\//i.test(normalized)) return normalized;
+
+  const marker = "/media/";
+  const idx = normalized.lastIndexOf(marker);
+  const relative = idx >= 0 ? normalized.slice(idx + marker.length) : normalized.split("/media/").pop() || "";
+  if (!relative) return null;
+
+  const apiBase = ((import.meta as any).env?.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/+$/, "");
+  return `${apiBase}/media/${relative.replace(/^\/+/, "")}`;
 }
 
 export default function AgentChatPage() {
@@ -111,7 +129,7 @@ export default function AgentChatPage() {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (auth.token) headers.Authorization = `Bearer ${auth.token}`;
 
-      const res = await apiFetchJson<{ answer: string; debug?: any }>("/api/v1/agent/chat", {
+      const res = await apiFetchJson<{ answer: string; debug?: any; sources?: any[]; identified?: any }>("/api/v1/agent/chat", {
         method: "POST",
         headers,
         body: JSON.stringify({
@@ -131,7 +149,26 @@ export default function AgentChatPage() {
               .join("\n")}`
           : "";
 
-      setMessages((prev) => [...prev, { role: "assistant", content: (res.answer || "(empty)") + sourcesText }]);
+      const identified = res.identified && typeof res.identified === "object" ? res.identified : {};
+      const identifiedImages = Array.isArray(identified.images) ? identified.images : [];
+      const firstImage = identifiedImages[0] && typeof identifiedImages[0] === "object" ? identifiedImages[0] : null;
+      const resultImageUrl = resolveMediaUrl(firstImage?.image_path);
+      const resultTitle = String(identified.model_id || "").trim() || undefined;
+      const resultSubtitle = [identified.maker, identified.part_number, identified.category]
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+        .join(" / ") || undefined;
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: (res.answer || "(empty)") + sourcesText,
+          resultImageUrl: resultImageUrl || undefined,
+          resultTitle,
+          resultSubtitle,
+        },
+      ]);
       setImageFile(null);
       console.info("[AgentChat] request completed", {
         hasImage: Boolean(selected),
@@ -195,6 +232,32 @@ export default function AgentChatPage() {
                         <Text size="xs" c="dimmed">
                           {m.imageName}
                         </Text>
+                      ) : null}
+                    </Stack>
+                  ) : null}
+                  {m.resultImageUrl ? (
+                    <Stack gap={6} mb={m.content ? "xs" : 0}>
+                      <Image
+                        src={m.resultImageUrl}
+                        alt={m.resultTitle || "matched product"}
+                        radius="md"
+                        h={160}
+                        w={220}
+                        fit="cover"
+                      />
+                      {m.resultTitle || m.resultSubtitle ? (
+                        <Stack gap={0}>
+                          {m.resultTitle ? (
+                            <Text size="xs" fw={600}>
+                              {m.resultTitle}
+                            </Text>
+                          ) : null}
+                          {m.resultSubtitle ? (
+                            <Text size="xs" c="dimmed">
+                              {m.resultSubtitle}
+                            </Text>
+                          ) : null}
+                        </Stack>
                       ) : null}
                     </Stack>
                   ) : null}

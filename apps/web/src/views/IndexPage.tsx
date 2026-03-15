@@ -7,7 +7,9 @@ import {
   Grid,
   Group,
   Image,
+  Modal,
   NumberInput,
+  SegmentedControl,
   Stack,
   Text,
   TextInput,
@@ -15,7 +17,7 @@ import {
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconSparkles, IconUpload } from "@tabler/icons-react";
+import { IconScan, IconSparkles, IconUpload } from "@tabler/icons-react";
 
 import { useAuth } from "../state/auth";
 import { apiFetchJson, toBase64 } from "../utils/api";
@@ -37,6 +39,14 @@ type IndexTaskStatus = {
   model_id?: string | null;
   detail: string;
 };
+
+type PreviewResponse = {
+  draft: MetadataDraft;
+  ocr_image_indices: number[];
+  label_ocr_text: string;
+};
+
+type MetadataMode = "auto" | "gpt" | "local";
 
 const TASK_TERMINAL_STATES = new Set(["completed", "failed"]);
 
@@ -64,16 +74,33 @@ export default function IndexPage() {
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [encodingPercent, setEncodingPercent] = useState<number | null>(null);
   const [taskStatus, setTaskStatus] = useState<IndexTaskStatus | null>(null);
+  const [ocrImageIndices, setOcrImageIndices] = useState<number[]>([]);
+  const [metadataMode, setMetadataMode] = useState<MetadataMode>("auto");
+  const [labelModalOpen, setLabelModalOpen] = useState(false);
+  const [labelFiles, setLabelFiles] = useState<File[]>([]);
+  const [labelPreviewUrls, setLabelPreviewUrls] = useState<string[]>([]);
+  const [labelOcrText, setLabelOcrText] = useState("");
 
   useEffect(() => {
     if (!files.length) {
       setPreviewUrls([]);
+      setOcrImageIndices([]);
       return;
     }
     const objectUrls = files.map((file) => URL.createObjectURL(file));
     setPreviewUrls(objectUrls);
     return () => objectUrls.forEach((url) => URL.revokeObjectURL(url));
   }, [files]);
+
+  useEffect(() => {
+    if (!labelFiles.length) {
+      setLabelPreviewUrls([]);
+      return;
+    }
+    const objectUrls = labelFiles.map((file) => URL.createObjectURL(file));
+    setLabelPreviewUrls(objectUrls);
+    return () => objectUrls.forEach((url) => URL.revokeObjectURL(url));
+  }, [labelFiles]);
 
   function setDraftField<K extends keyof MetadataDraft>(key: K, value: MetadataDraft[K]) {
     setDraft((prev) => ({ ...prev, [key]: value }));
@@ -97,6 +124,22 @@ export default function IndexPage() {
     return encoded;
   }
 
+  async function encodeLabelFiles(): Promise<string[]> {
+    if (!labelFiles.length) return [];
+    const selected = labelFiles.slice(0, 4);
+    const encoded: string[] = [];
+    for (let index = 0; index < selected.length; index += 1) {
+      encoded.push(
+        await toBase64(selected[index], {
+          maxBytes: 5 * 1024 * 1024,
+          maxDimension: 1600,
+          quality: 0.82,
+        }),
+      );
+    }
+    return encoded;
+  }
+
   async function runPreview() {
     if (!files.length) {
       notifications.show({ color: "yellow", title: "이미지 필요", message: "메타를 생성할 이미지를 선택하세요." });
@@ -105,12 +148,13 @@ export default function IndexPage() {
     setPreviewLoading(true);
     try {
       const image_base64_list = await encodeSelectedFiles();
+      const label_image_base64_list = await encodeLabelFiles();
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (auth.token) headers.Authorization = `Bearer ${auth.token}`;
-      const res = await apiFetchJson<{ draft: MetadataDraft }>("/api/v1/hybrid/index/preview", {
+      const res = await apiFetchJson<PreviewResponse>("/api/v1/hybrid/index/preview", {
         method: "POST",
         headers,
-        body: JSON.stringify({ image_base64_list }),
+        body: JSON.stringify({ image_base64_list, metadata_mode: metadataMode, label_image_base64_list }),
       });
       setDraft({
         model_id: res.draft.model_id || "",
@@ -122,9 +166,13 @@ export default function IndexPage() {
         price_value: typeof res.draft.price_value === "number" ? res.draft.price_value : null,
         source: res.draft.source || "openai",
       });
+      setOcrImageIndices(Array.isArray(res.ocr_image_indices) ? res.ocr_image_indices : []);
+      setLabelOcrText(res.label_ocr_text || "");
       notifications.show({ color: "teal", title: "초안 생성 완료", message: "생성된 메타데이터를 검토해 주세요." });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      setOcrImageIndices([]);
+      setLabelOcrText("");
       notifications.show({ color: "red", title: "초안 생성 실패", message: msg });
     } finally {
       setPreviewLoading(false);
@@ -148,6 +196,7 @@ export default function IndexPage() {
         body: JSON.stringify({
           image_base64: image_base64_list[0],
           image_base64_list,
+          ocr_image_indices: ocrImageIndices,
           ...draft,
         }),
       });
@@ -169,6 +218,9 @@ export default function IndexPage() {
       if (res.task_id) {
         setFiles([]);
         setDraft(cloneEmptyDraft());
+        setOcrImageIndices([]);
+        setLabelFiles([]);
+        setLabelOcrText("");
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -234,10 +286,40 @@ export default function IndexPage() {
 
   return (
     <Stack gap="md">
+      <Modal opened={labelModalOpen} onClose={() => setLabelModalOpen(false)} title="Label OCR" centered>
+        <Stack gap="md">
+          <Text size="sm" c="dimmed">
+            라벨 또는 명판만 가까이 찍은 이미지를 올리면, OCR 텍스트를 메타 생성의 보조 입력으로 사용합니다.
+          </Text>
+          <FileInput
+            label="라벨 이미지"
+            placeholder="라벨 이미지를 선택하세요"
+            value={labelFiles}
+            onChange={(value) => setLabelFiles(Array.isArray(value) ? value : value ? [value] : [])}
+            accept="image/*"
+            multiple
+          />
+          {labelPreviewUrls.length > 0 ? (
+            <Group align="flex-start">
+              {labelPreviewUrls.slice(0, 4).map((url, index) => (
+                <Image key={url} src={url} alt={labelFiles[index]?.name || `label-${index + 1}`} radius="md" h={96} w={96} fit="cover" />
+              ))}
+            </Group>
+          ) : null}
+          <Group justify="space-between">
+            <Text size="sm" c="dimmed">
+              {labelFiles.length ? `${labelFiles.length}장 선택됨` : "선택된 라벨 이미지 없음"}
+            </Text>
+            <Button variant="light" onClick={() => setLabelModalOpen(false)}>
+              완료
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
       <Group justify="space-between" align="baseline">
         <Title order={3}>Index Asset</Title>
         <Text c="dimmed" size="sm">
-          업로드 → GPT 초안 생성 → 수정 → 확인 후 임베딩/저장
+          업로드 → 메타 초안 생성 → 수정 → 확인 후 임베딩/저장
         </Text>
       </Group>
 
@@ -267,7 +349,7 @@ export default function IndexPage() {
                       {files.length}장 선택됨
                     </Text>
                     <Text size="sm" c="dimmed">
-                      GPT 메타 초안은 최대 4장을 함께 보고 생성하고, 확인 후 저장 시 선택한 이미지들을 같은 모델로 모두 인덱싱합니다.
+                      메타 초안은 최대 4장을 함께 보고 생성하고, 확인 후 저장 시 선택한 이미지들을 같은 모델로 모두 인덱싱합니다.
                     </Text>
                   </Stack>
                 </Group>
@@ -276,10 +358,33 @@ export default function IndexPage() {
           ) : null}
 
           <Grid.Col span={12}>
+            <Group justify="space-between" align="end">
+              <Stack gap={4}>
+                <Text fw={500} size="sm">
+                  메타 생성 모드
+                </Text>
+                <SegmentedControl
+                  value={metadataMode}
+                  onChange={(value) => setMetadataMode(value as MetadataMode)}
+                  data={[
+                    { label: "Auto", value: "auto" },
+                    { label: "GPT", value: "gpt" },
+                    { label: "Local", value: "local" },
+                  ]}
+                />
+              </Stack>
+              <Button variant="light" leftSection={<IconScan size={16} />} onClick={() => setLabelModalOpen(true)}>
+                Label OCR
+              </Button>
+            </Group>
+          </Grid.Col>
+
+          <Grid.Col span={12}>
             <Group justify="space-between">
               <Group gap="xs">
                 {draft.source ? <Badge variant="light">{draft.source}</Badge> : null}
                 {taskStatus ? <Badge variant="outline">job: {taskStatus.status}</Badge> : null}
+                {labelFiles.length ? <Badge variant="outline">label {labelFiles.length}장</Badge> : null}
               </Group>
               <Button leftSection={<IconSparkles size={16} />} loading={previewLoading} onClick={runPreview}>
                 메타 자동 추출
@@ -294,6 +399,9 @@ export default function IndexPage() {
               <Text size="xs" c="dimmed" mt={6}>
                 {taskStatus.detail || "백그라운드 작업 진행 중"} {taskStatus.model_id ? `(${taskStatus.model_id})` : ""}
               </Text>
+            ) : null}
+            {labelOcrText ? (
+              <Textarea mt={6} label="Label OCR" minRows={3} value={labelOcrText} readOnly />
             ) : null}
           </Grid.Col>
 

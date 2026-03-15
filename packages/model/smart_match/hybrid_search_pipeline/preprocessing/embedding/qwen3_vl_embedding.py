@@ -25,6 +25,11 @@ else:  # pragma: no cover
     _QWEN3_VL_MODEL_IMPORT_ERROR = None
 
 try:  # pragma: no cover - runtime dependency
+    from transformers import Qwen3VLForConditionalGeneration  # type: ignore
+except Exception:
+    Qwen3VLForConditionalGeneration = None
+
+try:  # pragma: no cover - runtime dependency
     from transformers.models.qwen3_vl.processing_qwen3_vl import Qwen3VLProcessor  # type: ignore
 except Exception as exc:  # pragma: no cover
     Qwen3VLProcessor = None
@@ -99,10 +104,14 @@ class Qwen3VLEmbeddingBackend:
         self._device = preferred_torch_device(device)
         self._dtype = preferred_inference_dtype(self._device, dtype)
         self._processor = Qwen3VLProcessor.from_pretrained(model_name)
-        load_kwargs = {"torch_dtype": self._dtype}
+        load_kwargs = {"dtype": self._dtype, "trust_remote_code": True}
         if self._device == "cuda":
             load_kwargs["device_map"] = "auto"
-        self._model = Qwen3VLModel.from_pretrained(model_name, **load_kwargs)
+        if Qwen3VLForConditionalGeneration is not None:
+            generator = Qwen3VLForConditionalGeneration.from_pretrained(model_name, **load_kwargs)
+            self._model = generator.model
+        else:
+            self._model = Qwen3VLModel.from_pretrained(model_name, **load_kwargs)
         if self._device != "cuda":
             self._model.to(self._device)
         self._model.eval()

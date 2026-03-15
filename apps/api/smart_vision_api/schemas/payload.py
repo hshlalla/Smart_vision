@@ -34,11 +34,15 @@ class HybridMetadataDraft(BaseModel):
 class HybridIndexPreviewRequest(BaseModel):
     image_base64: Optional[str] = Field(None, description="Base64 encoded image")
     image_base64_list: List[str] = Field(default_factory=list, description="Optional list of base64 encoded images")
+    metadata_mode: str = Field("auto", description="Metadata generation mode: auto, gpt, local")
+    label_image_base64_list: List[str] = Field(default_factory=list, description="Optional label-only images for OCR assistance")
 
 
 class HybridIndexPreviewResponse(BaseModel):
     status: str = Field(..., description="Preview generation status")
     draft: HybridMetadataDraft
+    ocr_image_indices: List[int] = Field(default_factory=list, description="Image indices recommended for OCR at confirm time")
+    label_ocr_text: str = Field("", description="OCR text extracted from uploaded label images")
 
 
 class HybridIndexConfirmRequest(BaseModel):
@@ -51,6 +55,7 @@ class HybridIndexConfirmRequest(BaseModel):
     description: str = Field("", description="Description metadata")
     product_info: str = Field("", description="Optional product type")
     price_value: Optional[int] = Field(None, description="Optional estimated price")
+    ocr_image_indices: List[int] = Field(default_factory=list, description="Optional subset of image indices to OCR")
 
 
 class HybridSearchRequest(BaseModel):
@@ -58,6 +63,7 @@ class HybridSearchRequest(BaseModel):
     image_base64: Optional[str] = Field(None, description="Base64 encoded image")
     part_number: Optional[str] = Field(None, description="Optional part number filter")
     top_k: int = Field(10, ge=1, le=50, description="Number of results to return")
+    use_reranker: Optional[bool] = Field(None, description="Override reranker usage for this request")
 
 
 class HybridSearchResponse(BaseModel):

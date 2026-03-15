@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -9,6 +11,7 @@ from smart_vision_api.api.v1 import hybrid as hybrid_api
 from smart_vision_api.core import auth as auth_core
 from smart_vision_api.core.auth import require_user
 from smart_vision_api.core.config import settings
+from smart_vision_api.services.hybrid import HybridSearchService
 
 
 def test_hybrid_search_success(monkeypatch):
@@ -31,10 +34,14 @@ def test_hybrid_search_success(monkeypatch):
 
 
 def test_hybrid_index_preview_success(monkeypatch):
-    def fake_preview(*, image_b64_list: list[str]):
+    def fake_preview(*, image_b64_list: list[str], metadata_mode: str | None = None, label_image_b64_list: list[str] | None = None):
         assert image_b64_list == ["abc123"]
+        assert metadata_mode == "auto"
+        assert label_image_b64_list == []
         return {
             "status": "preview_ready",
+            "ocr_image_indices": [0],
+            "label_ocr_text": "",
             "draft": {
                 "model_id": "",
                 "maker": "Fuji Electric",
@@ -65,6 +72,7 @@ def test_hybrid_index_confirm_success(monkeypatch):
     def fake_confirm(*, image_b64_list: list[str], metadata: dict):
         assert image_b64_list == ["abc123"]
         assert metadata["maker"] == "Fuji Electric"
+        assert metadata["ocr_image_indices"] == [0]
         return {"status": "queued", "model_id": "m000001", "task_id": "task-1"}
 
     monkeypatch.setattr(hybrid_api.hybrid_service, "confirm_index_asset", fake_confirm)
@@ -85,6 +93,7 @@ def test_hybrid_index_confirm_success(monkeypatch):
             "description": "Fuji Electric magnetic contactor",
             "product_info": "magnetic contactor",
             "price_value": 120000,
+            "ocr_image_indices": [0],
         },
     )
     assert resp.status_code == 200
@@ -190,3 +199,33 @@ def test_auth_enabled_login_and_me(monkeypatch):
     me = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert me.status_code == 200
     assert me.json()["username"] == "admin"
+
+
+def test_metadata_preview_helper_infers_fields_from_ocr_text():
+    text = "Fuji Electric SC-N2S magnetic contactor model"
+
+    assert HybridSearchService._infer_maker_from_text(text) == "Fuji Electric"
+    assert HybridSearchService._infer_part_number_from_text(text) == "SC-N2S"
+    assert HybridSearchService._infer_category_from_text(text) == "contactor"
+
+
+def test_confirm_metadata_normalizes_ocr_image_indices():
+    indices = HybridSearchService._normalize_ocr_image_indices(["0", 2, -1, "x", 2, 99], 3)
+    assert indices == [0, 2]
+
+
+def test_qwen_metadata_preview_parses_json_response():
+    service = HybridSearchService()
+    service._qwen_metadata_preview_runtime = SimpleNamespace(
+        captioner=SimpleNamespace(
+            generate=lambda *_args, **_kwargs: (
+                '{"maker":"Fuji Electric","part_number":"SC-N2S","category":"contactor",'
+                '"description":"Fuji Electric contactor","product_info":"contactor","price_value":null}'
+            )
+        )
+    )
+
+    draft = service._suggest_metadata_from_qwen([__file__])
+    assert draft["source"] == "qwen3_vl"
+    assert draft["maker"] == "Fuji Electric"
+    assert draft["part_number"] == "SC-N2S"

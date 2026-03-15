@@ -1,6 +1,23 @@
 Smart Vision Model Release Notes
 ================================
 
+## 2.4.0
+
+### Added
+- 경량 text-only retrieval runtime을 추가했습니다.
+- request 단위 reranker on/off override를 지원하도록 검색 경로를 확장했습니다.
+- Apple Silicon `mps` 디바이스 선택을 PyTorch 기반 런타임에 반영했습니다.
+
+### Changed
+- `model_id` 카운터 저장소를 Milvus 컬렉션에서 SQLite로 전환했습니다.
+- 인덱싱 전처리에서 OCR 입력과 임베딩 입력을 분리했습니다.
+- 저장용/임베딩용 이미지 사본은 축소본을 사용하도록 조정했습니다.
+- 메타 preview / caption 전략이 `LOCAL_MODE`와 상위 API 설정 기준에 맞춰 정리되었습니다.
+
+### Fixed
+- text-only 검색 경로가 attrs 이미지 정보를 함께 반환하지 않던 문제를 수정했습니다.
+- part number exact match에서 공백/하이픈 차이에 덜 민감하도록 정규화 매칭을 보강했습니다.
+
 ## 2.3.0
 
 ### Added

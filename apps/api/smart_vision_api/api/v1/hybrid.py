@@ -51,7 +51,17 @@ async def preview_index_asset(
             len(image_b64_list),
             len(image_b64_list[0] or ""),
         )
-        result = hybrid_service.preview_index_asset(image_b64_list=image_b64_list)
+        label_image_b64_list = [img for img in list(request.label_image_base64_list or []) if img]
+        if any(len(img or "") > settings.MAX_IMAGE_BASE64_LENGTH for img in label_image_b64_list):
+            raise HTTPException(
+                status_code=413,
+                detail=f"label_image_base64 is too large (max {settings.MAX_IMAGE_BASE64_LENGTH} chars per image).",
+            )
+        result = hybrid_service.preview_index_asset(
+            image_b64_list=image_b64_list,
+            metadata_mode=request.metadata_mode,
+            label_image_b64_list=label_image_b64_list,
+        )
         return HybridIndexPreviewResponse(**result)
     except HTTPException:
         raise
@@ -188,6 +198,7 @@ async def search(
             image_b64=request.image_base64,
             top_k=request.top_k,
             part_number=request.part_number,
+            use_reranker=request.use_reranker,
         )
         logger.info("POST /hybrid/search completed: result_count=%d", len(results or []))
         return HybridSearchResponse(results=results)
