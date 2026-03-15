@@ -13,6 +13,7 @@ import torch
 from transformers import AutoModel, AutoTokenizer
 
 import logging
+from smart_match.device_utils import preferred_inference_dtype, preferred_torch_device
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +31,8 @@ class BGEM3TextEncoder:
         document_instruction: str = "Represent this document for retrieval:",
         query_instruction: str = "Represent this query for retrieving relevant documents:",
     ) -> None:
-        self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self._dtype = dtype if self._device == "cuda" else torch.float32
+        self._device = preferred_torch_device(device)
+        self._dtype = preferred_inference_dtype(self._device, dtype)
         self.embedding_dim = embedding_dim
         self._tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=trust_remote_code)
         self._model = self._load_model(model_name, trust_remote_code=trust_remote_code).to(self._device)

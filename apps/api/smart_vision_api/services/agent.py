@@ -63,6 +63,118 @@ class SmartVisionAgentService:
     def __init__(self) -> None:
         self._image_store = _ImageStore()
 
+    @staticmethod
+    def _is_open_world_query(message: str) -> bool:
+        text = (message or "").lower()
+        keywords = [
+            "가격",
+            "얼마",
+            "시세",
+            "구매",
+            "링크",
+            "웹",
+            "search web",
+            "price",
+            "buy",
+            "quote",
+            "manual",
+            "datasheet",
+            "catalog",
+            "카탈로그",
+            "매뉴얼",
+            "스펙",
+            "사양",
+        ]
+        return any(keyword in text for keyword in keywords)
+
+    @staticmethod
+    def _is_collection_stats_query(message: str) -> bool:
+        text = (message or "").lower()
+        keywords = [
+            "컬렉션",
+            "collection",
+            "num_entities",
+            "엔티티",
+            "몇 개",
+            "몇개",
+            "저장되어 있는",
+            "저장된 부품 수",
+            "milvus",
+        ]
+        count_keywords = ["개수", "count", "갯수", "수량", "내용 몇개", "몇 개"]
+        return any(k in text for k in keywords) and any(k in text for k in count_keywords)
+
+    @staticmethod
+    def _format_direct_search_answer(message: str, result: dict[str, Any]) -> str:
+        lines = []
+        model_id = str(result.get("model_id") or "").strip()
+        maker = str(result.get("maker") or "").strip()
+        part_number = str(result.get("part_number") or "").strip()
+        category = str(result.get("category") or "").strip()
+        description = str(result.get("description") or "").strip()
+        score = result.get("score")
+        lines.append(f"'{message.strip()}' 기준으로 내부 인덱스에서 가장 유력한 항목입니다.")
+        if model_id:
+            lines.append(f"- model_id: {model_id}")
+        if maker:
+            lines.append(f"- maker: {maker}")
+        if part_number:
+            lines.append(f"- part_number: {part_number}")
+        if category:
+            lines.append(f"- category: {category}")
+        if description:
+            lines.append(f"- description: {description}")
+        if score is not None:
+            try:
+                lines.append(f"- match_score: {float(score):.3f}")
+            except Exception:
+                pass
+        lines.append("추가로 가격/웹 정보가 필요하면 그때 외부 검색을 이어서 할 수 있습니다.")
+        return "\n".join(lines)
+
+    def _direct_text_lookup(self, *, message: str, top_k: int) -> Dict[str, Any] | None:
+        cleaned = (message or "").strip()
+        if not cleaned or self._is_open_world_query(cleaned):
+            return None
+        results = hybrid_service.search(query_text=cleaned, image_b64=None, top_k=top_k, part_number=None)
+        if not isinstance(results, list) or not results:
+            return None
+        top = results[0] if isinstance(results[0], dict) else None
+        if not top:
+            return None
+        try:
+            score = float(top.get("score") or 0.0)
+        except Exception:
+            score = 0.0
+        exact_boost = float(top.get("exact_field_boost") or 0.0)
+        lexical_hit = bool(top.get("lexical_hit"))
+        if score < 0.72 and exact_boost < 0.30 and not lexical_hit:
+            return None
+        observation = {
+            "threshold": 0.72,
+            "good_match": True,
+            "top_score": score,
+            "results": results[:top_k],
+            "fast_path": True,
+        }
+        return {
+            "output": self._format_direct_search_answer(cleaned, top),
+            "intermediate_steps": [{"tool": "hybrid_search", "args": {"query_text": cleaned, "top_k": top_k}, "observation": observation}],
+        }
+
+    def _direct_collection_stats(self, *, message: str) -> Dict[str, Any] | None:
+        if not self._is_collection_stats_query(message):
+            return None
+        stats = hybrid_service.collection_stats()
+        lines = ["현재 Milvus 컬렉션 엔티티 수는 다음과 같습니다."]
+        for key in ["image", "text", "attrs", "model", "caption"]:
+            row = stats.get(key, {})
+            lines.append(f"- {row.get('name', key)}: {int(row.get('num_entities', 0) or 0)}")
+        return {
+            "output": "\n".join(lines),
+            "intermediate_steps": [{"tool": "collection_stats", "args": {}, "observation": stats}],
+        }
+
     def put_image(self, image_base64: str) -> str:
         return self._image_store.put(image_base64)
 
@@ -219,6 +331,11 @@ class SmartVisionAgentService:
             )
             return {"results": results, "count": len(results)}
 
+        @tool("collection_stats")
+        def collection_stats() -> dict[str, Any]:
+            """Return Milvus collection names and entity counts for the hybrid search collections."""
+            return hybrid_service.collection_stats()
+
         tools = [
             hybrid_search,
             vision_identify,
@@ -228,6 +345,7 @@ class SmartVisionAgentService:
             upsert_model_metadata,
             gparts_search_prices,
             catalog_search,
+            collection_stats,
         ]
         return tools
 
@@ -241,6 +359,14 @@ class SmartVisionAgentService:
     ) -> Dict[str, Any]:
         from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
         from langchain_openai import ChatOpenAI
+
+        if not request_id:
+            stats = self._direct_collection_stats(message=message)
+            if stats is not None:
+                return stats
+            direct = self._direct_text_lookup(message=message, top_k=max_tool_results)
+            if direct is not None:
+                return direct
 
         self._require_openai_key()
 
@@ -259,6 +385,7 @@ class SmartVisionAgentService:
             "- upsert_model_metadata(model_id, maker, part_number, category, description, web_text, price_text)\n"
             "- gparts_search_prices(keyword, max_results)  (example source)\n\n"
             "- catalog_search(query, top_k, model_id, part_number)\n\n"
+            "- collection_stats()\n\n"
             f"request_id={request_id}\n"
             f"update_milvus={'true' if allow_updates else 'false'}\n\n"
             "Rules:\n"
@@ -268,7 +395,8 @@ class SmartVisionAgentService:
             "4) If there's no model_id (no match) and update_milvus=true, allocate_model_id by category prefix and upsert_model_metadata.\n"
             "5) If you used web_search, include 2-5 sources (title + url) at the end.\n"
             "6) If you used catalog_search, cite source and page in the answer.\n"
-            "7) If request_id is non-empty, never ask the user to upload an image again in this turn.\n"
+            "7) If the user asks how many items are stored or asks about collection counts, call collection_stats.\n"
+            "8) If request_id is non-empty, never ask the user to upload an image again in this turn.\n"
             "Be honest about uncertainty.\n"
         )
 

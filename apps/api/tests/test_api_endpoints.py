@@ -31,8 +31,8 @@ def test_hybrid_search_success(monkeypatch):
 
 
 def test_hybrid_index_preview_success(monkeypatch):
-    def fake_preview(*, image_b64: str):
-        assert image_b64 == "abc123"
+    def fake_preview(*, image_b64_list: list[str]):
+        assert image_b64_list == ["abc123"]
         return {
             "status": "preview_ready",
             "draft": {
@@ -62,10 +62,10 @@ def test_hybrid_index_preview_success(monkeypatch):
 
 
 def test_hybrid_index_confirm_success(monkeypatch):
-    def fake_confirm(*, image_b64: str, metadata: dict):
-        assert image_b64 == "abc123"
+    def fake_confirm(*, image_b64_list: list[str], metadata: dict):
+        assert image_b64_list == ["abc123"]
         assert metadata["maker"] == "Fuji Electric"
-        return {"status": "indexed", "model_id": "m000001"}
+        return {"status": "queued", "model_id": "m000001", "task_id": "task-1"}
 
     monkeypatch.setattr(hybrid_api.hybrid_service, "confirm_index_asset", fake_confirm)
 
@@ -88,6 +88,31 @@ def test_hybrid_index_confirm_success(monkeypatch):
         },
     )
     assert resp.status_code == 200
+    assert resp.json()["model_id"] == "m000001"
+    assert resp.json()["status"] == "queued"
+    assert resp.json()["task_id"] == "task-1"
+
+
+def test_hybrid_index_task_success(monkeypatch):
+    def fake_get_task(task_id: str):
+        assert task_id == "task-1"
+        return {
+            "task_id": "task-1",
+            "status": "running",
+            "model_id": "m000001",
+            "detail": "Running OCR, embeddings, and Milvus upsert.",
+        }
+
+    monkeypatch.setattr(hybrid_api.hybrid_service, "get_index_task", fake_get_task)
+
+    app = FastAPI()
+    app.include_router(hybrid_api.router, prefix="/api/v1")
+    app.dependency_overrides[require_user] = lambda: "tester"
+    client = TestClient(app)
+
+    resp = client.get("/api/v1/hybrid/index/tasks/task-1")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "running"
     assert resp.json()["model_id"] == "m000001"
 
 

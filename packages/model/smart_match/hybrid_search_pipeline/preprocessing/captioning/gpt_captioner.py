@@ -20,6 +20,7 @@ from typing import Optional
 
 import torch
 from PIL import Image
+from smart_match.device_utils import preferred_torch_device
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ class GPTVLCaptioner:
         timeout_s: float = 120.0,
     ) -> None:
         self._model = model or os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
-        self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self._device = preferred_torch_device(device)
         self._prompt = (prompt or "").strip()
         self._max_image_side = int(max_image_side)
         self._image_detail = (os.getenv("OPENAI_IMAGE_DETAIL", image_detail) or "low").strip().lower()

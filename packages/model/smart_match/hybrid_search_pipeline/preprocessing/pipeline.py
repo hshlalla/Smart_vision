@@ -59,10 +59,13 @@ class PreprocessingPipeline:
         metadata: Dict[str, str],
         *,
         enable_ocr: bool = True,
+        embedding_image_path: Optional[str] = None,
     ) -> NormalizedRecord:
+        embedding_path = embedding_image_path or image_path
         logger.info(
-            "Preprocessing start: image=%s metadata_keys=%s",
+            "Preprocessing start: image=%s embedding_image=%s metadata_keys=%s",
             image_path,
+            embedding_path,
             sorted(metadata.keys()),
         )
         total_start = time.perf_counter()
@@ -87,7 +90,7 @@ class PreprocessingPipeline:
             logger.info("OCR extraction skipped: enable_ocr=%s engine=%s", enable_ocr, bool(self._ocr_engine))
 
         stage_start = time.perf_counter()
-        image_vector = self._vision_encoder.encode(image_path)
+        image_vector = self._vision_encoder.encode(embedding_path)
         vision_duration = time.perf_counter() - stage_start
         logger.info("Image embedding generated: dim=%d duration=%.2fs", image_vector.shape[-1], vision_duration)
 
@@ -100,12 +103,12 @@ class PreprocessingPipeline:
         if self._captioner is not None:
             try:
                 stage_start = time.perf_counter()
-                caption_text = self._captioner.generate(image_path)
+                caption_text = self._captioner.generate(embedding_path)
                 caption_duration = time.perf_counter() - stage_start
                 if caption_text:
                     logger.info(
                         "Caption generated: path=%s chars=%d preview=%s duration=%.2fs",
-                        image_path,
+                        embedding_path,
                         len(caption_text),
                         caption_text[:120].replace("\n", " "),
                         caption_duration,
@@ -113,11 +116,11 @@ class PreprocessingPipeline:
                 else:
                     logger.info(
                         "Caption generation returned empty result for %s duration=%.2fs",
-                        image_path,
+                        embedding_path,
                         caption_duration,
                     )
             except Exception:  # pragma: no cover - caption fallback
-                logger.exception("Caption generation failed for %s", image_path)
+                logger.exception("Caption generation failed for %s", embedding_path)
                 caption_text = ""
 
         metadata_phrases = []

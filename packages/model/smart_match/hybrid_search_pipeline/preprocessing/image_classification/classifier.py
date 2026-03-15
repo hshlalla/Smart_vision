@@ -5,9 +5,10 @@ from torchvision import datasets, models, transforms
 from torch.utils.data import DataLoader, random_split
 from torchvision.models import resnet152, ResNet152_Weights
 from sklearn.metrics import f1_score
+from smart_match.device_utils import preferred_torch_device
 
 # 디바이스 설정 (GPU 사용 가능 여부 확인)
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device(preferred_torch_device())
 print(f"Using device: {device}")
 
 # 데이터 전처리 및 증강

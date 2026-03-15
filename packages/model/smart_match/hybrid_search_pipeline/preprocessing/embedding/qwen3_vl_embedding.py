@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Iterable, List, Optional
 
 import torch
+from smart_match.device_utils import preferred_inference_dtype, preferred_torch_device
 
 try:  # pragma: no cover - runtime dependency
     from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLModel  # type: ignore
@@ -95,8 +96,8 @@ class Qwen3VLEmbeddingBackend:
                 + detail_text
             )
 
-        self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self._dtype = dtype if self._device == "cuda" and dtype is not None else torch.float32
+        self._device = preferred_torch_device(device)
+        self._dtype = preferred_inference_dtype(self._device, dtype)
         self._processor = Qwen3VLProcessor.from_pretrained(model_name)
         load_kwargs = {"torch_dtype": self._dtype}
         if self._device == "cuda":

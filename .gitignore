@@ -17,6 +17,7 @@ ENV/
 
 # ---------- Data / outputs ----------
 /data/
+/apps/api/data/
 /media/
 /dataset/*
 !/dataset/*.py

@@ -23,6 +23,7 @@ System Features:
 """
 
 from pathlib import Path
+import threading
 from typing import Dict
 
 from fastapi import FastAPI, Request
@@ -33,6 +34,7 @@ from fastapi.staticfiles import StaticFiles
 from .api.v1 import agent, auth, catalog, hybrid
 from .core.config import settings
 from .core.logger import get_logger
+from .services.hybrid import hybrid_service
 
 # Configure logging
 logger = get_logger()
@@ -79,6 +81,20 @@ app.include_router(
 media_root = Path("media").resolve()
 media_root.mkdir(parents=True, exist_ok=True)
 app.mount("/media", StaticFiles(directory=str(media_root)), name="media")
+
+
+@app.on_event("startup")
+async def startup_warmup() -> None:
+    if not settings.WARMUP_TEXT_SEARCH_ON_STARTUP:
+        return
+
+    def _warm() -> None:
+        try:
+            hybrid_service.warmup_text_only()
+        except Exception:
+            logger.exception("Lightweight text-only search warmup failed.")
+
+    threading.Thread(target=_warm, name="text-search-warmup", daemon=True).start()
 
 
 @app.get(

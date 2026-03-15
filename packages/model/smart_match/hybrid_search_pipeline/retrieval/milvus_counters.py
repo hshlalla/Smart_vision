@@ -1,17 +1,20 @@
 """
-Milvus Counter Store
+Local Counter Store
 
-Provides a simple per-key counter stored in a dedicated Milvus collection.
-This is intended for single-writer deployments (one API instance).
+Provides a simple per-key counter backed by SQLite. This is intended for
+single-writer deployments (one API instance) and avoids extra Milvus state for
+model_id allocation.
 """
 
 from __future__ import annotations
 
+import os
+import sqlite3
+import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
-
-from pymilvus import Collection, CollectionSchema, DataType, FieldSchema, utility
 
 
 @dataclass(frozen=True)
@@ -22,98 +25,95 @@ class CounterValue:
 
 
 class MilvusCounterStore:
+    """Compatibility wrapper preserving the old public API.
+
+    `collection_name` now acts as a logical namespace in the local SQLite DB.
+    """
+
     def __init__(self, *, collection_name: str = "sv_counters") -> None:
         self.collection_name = (collection_name or "sv_counters").strip()
         if not self.collection_name:
             raise ValueError("collection_name must be non-empty.")
-        self.collection = self._get_or_create(self.collection_name)
+        db_path = Path(os.getenv("COUNTERS_DB_PATH", "data/model_id_counters.sqlite")).expanduser().resolve()
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._db_path = db_path
+        self._lock = threading.Lock()
+        self._ensure_schema()
 
-    @staticmethod
-    def _schema(name: str) -> CollectionSchema:
-        fields = [
-            FieldSchema(
-                name="key",
-                dtype=DataType.VARCHAR,
-                is_primary=True,
-                auto_id=False,
-                max_length=256,
-            ),
-            FieldSchema(name="value", dtype=DataType.INT64),
-            FieldSchema(name="updated_at", dtype=DataType.INT64),
-            # Milvus 2.6+ may reject schemas without any vector field.
-            # Keep a tiny placeholder vector to satisfy schema checks.
-            FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=2),
-        ]
-        return CollectionSchema(fields, description=f"{name} counters")
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(str(self._db_path), timeout=30, isolation_level=None)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        return conn
 
-    def _get_or_create(self, name: str) -> Collection:
-        if utility.has_collection(name):
-            collection = Collection(name=name)
-            # Validate expected fields exist (best-effort).
-            field_names = {field.name for field in collection.schema.fields}
-            if not {"key", "value", "updated_at"}.issubset(field_names):
-                raise RuntimeError(
-                    f"Milvus counters collection '{name}' has incompatible schema. "
-                    "Drop it so it can be recreated."
+    def _ensure_schema(self) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS counters (
+                    namespace TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    value INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    PRIMARY KEY(namespace, key)
                 )
-            return collection
-        return Collection(name=name, schema=self._schema(name))
-
-    @staticmethod
-    def _build_insert_payload(collection: Collection, key: str, value: int, updated_at: int):
-        """Build insert payload aligned to existing collection schema."""
-        payload = []
-        for field in collection.schema.fields:
-            if field.name == "key":
-                payload.append([key])
-            elif field.name == "value":
-                payload.append([value])
-            elif field.name == "updated_at":
-                payload.append([updated_at])
-            elif field.dtype in (DataType.FLOAT_VECTOR, DataType.BINARY_VECTOR):
-                payload.append([[0.0, 0.0]])
-            else:
-                # Fallback for unexpected optional fields.
-                payload.append([""])
-        return payload
+                """
+            )
 
     def get(self, key: str) -> Optional[CounterValue]:
         key = (key or "").strip()
         if not key:
             return None
-        safe = key.replace('"', '\\"')
-        rows = self.collection.query(expr=f'key == "{safe}"', output_fields=["key", "value", "updated_at"])
-        if not rows:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT key, value, updated_at FROM counters WHERE namespace = ? AND key = ?",
+                (self.collection_name, key),
+            ).fetchone()
+        if row is None:
             return None
-        row = rows[0]
-        return CounterValue(
-            key=str(row.get("key", "")),
-            value=int(row.get("value", 0)),
-            updated_at=int(row.get("updated_at", 0)),
-        )
+        return CounterValue(key=str(row[0]), value=int(row[1]), updated_at=int(row[2]))
 
     def set(self, key: str, value: int) -> CounterValue:
         key = (key or "").strip()
         if not key:
             raise ValueError("key must be non-empty.")
-        value = int(value)
         updated_at = int(time.time())
-        safe = key.replace('"', '\\"')
-        try:
-            self.collection.delete(expr=f'key == "{safe}"')
-        except Exception:
-            pass
-        self.collection.insert(self._build_insert_payload(self.collection, key, value, updated_at))
-        try:
-            self.collection.flush()
-        except Exception:
-            pass
-        return CounterValue(key=key, value=value, updated_at=updated_at)
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO counters(namespace, key, value, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(namespace, key)
+                DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+                """,
+                (self.collection_name, key, int(value), updated_at),
+            )
+        return CounterValue(key=key, value=int(value), updated_at=updated_at)
 
     def next(self, key: str) -> CounterValue:
-        current = self.get(key)
-        next_value = 1 if current is None else int(current.value) + 1
-        return self.set(key, next_value)
+        key = (key or "").strip()
+        if not key:
+            raise ValueError("key must be non-empty.")
+        with self._lock:
+            with self._connect() as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                row = conn.execute(
+                    "SELECT value FROM counters WHERE namespace = ? AND key = ?",
+                    (self.collection_name, key),
+                ).fetchone()
+                next_value = 1 if row is None else int(row[0]) + 1
+                updated_at = int(time.time())
+                conn.execute(
+                    """
+                    INSERT INTO counters(namespace, key, value, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(namespace, key)
+                    DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+                    """,
+                    (self.collection_name, key, next_value, updated_at),
+                )
+                conn.commit()
+        return CounterValue(key=key, value=next_value, updated_at=updated_at)
 
 
 __all__ = ["CounterValue", "MilvusCounterStore"]

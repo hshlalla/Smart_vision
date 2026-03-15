@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   AspectRatio,
   Badge,
@@ -31,6 +31,15 @@ type MetadataDraft = {
   price_value: number | null;
   source?: string;
 };
+
+type IndexTaskStatus = {
+  task_id: string;
+  status: string;
+  model_id?: string | null;
+  detail: string;
+};
+
+const TASK_TERMINAL_STATES = new Set(["completed", "failed"]);
 
 const EMPTY_DRAFT: MetadataDraft = {
   model_id: "",
@@ -70,6 +79,7 @@ export default function SearchPage() {
   const [draft, setDraft] = useState<MetadataDraft>(EMPTY_DRAFT);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
+  const [taskStatus, setTaskStatus] = useState<IndexTaskStatus | null>(null);
 
   const hasQuery = useMemo(() => Boolean(queryText.trim() || file), [queryText, file]);
 
@@ -189,15 +199,25 @@ export default function SearchPage() {
       const image_base64 = await encodeSelectedFile();
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (auth.token) headers.Authorization = `Bearer ${auth.token}`;
-      const res = await apiFetchJson<{ status: string; model_id?: string }>("/api/v1/hybrid/index/confirm", {
+      const res = await apiFetchJson<{ status: string; model_id?: string; task_id?: string }>("/api/v1/hybrid/index/confirm", {
         method: "POST",
         headers,
         body: JSON.stringify({ image_base64, ...draft }),
       });
+      setTaskStatus(
+        res.task_id
+          ? {
+              task_id: res.task_id,
+              status: res.status,
+              model_id: res.model_id ?? null,
+              detail: "백그라운드 인덱싱 작업이 시작되었습니다.",
+            }
+          : null,
+      );
       notifications.show({
-        color: "teal",
-        title: "저장 완료",
-        message: res.model_id ? `${res.status} (${res.model_id})` : res.status,
+        color: "blue",
+        title: "저장 시작",
+        message: res.model_id ? `백그라운드 작업으로 전환됨 (${res.model_id})` : "백그라운드 작업으로 전환됨",
       });
       if (res.model_id) {
         setDraft((prev) => ({ ...prev, model_id: res.model_id || prev.model_id }));
@@ -210,6 +230,62 @@ export default function SearchPage() {
       setEncodingPercent(null);
     }
   }
+
+  useEffect(() => {
+    if (!taskStatus?.task_id) return;
+    if (TASK_TERMINAL_STATES.has(taskStatus.status)) return;
+
+    let cancelled = false;
+    let timer: number | null = null;
+    const headers: Record<string, string> = {};
+    if (auth.token) headers.Authorization = `Bearer ${auth.token}`;
+
+    const poll = async () => {
+      try {
+        const res = await apiFetchJson<IndexTaskStatus>(`/api/v1/hybrid/index/tasks/${taskStatus.task_id}`, {
+          headers,
+        });
+        if (cancelled) return;
+        setTaskStatus(res);
+        if (res.model_id) {
+          setDraft((prev) => ({ ...prev, model_id: res.model_id || prev.model_id }));
+        }
+        if (res.status === "completed") {
+          notifications.show({
+            color: "teal",
+            title: "저장 완료",
+            message: res.model_id ? `${res.detail} (${res.model_id})` : res.detail,
+          });
+          return;
+        }
+        if (res.status === "failed") {
+          notifications.show({ color: "red", title: "저장 실패", message: res.detail || "백그라운드 작업이 실패했습니다." });
+          return;
+        }
+        timer = window.setTimeout(poll, 2500);
+      } catch (err) {
+        if (cancelled) return;
+        const msg = err instanceof Error ? err.message : String(err);
+        setTaskStatus((prev) =>
+          prev
+            ? {
+                ...prev,
+                detail: `상태 조회 재시도 중: ${msg}`,
+              }
+            : prev,
+        );
+        timer = window.setTimeout(poll, 4000);
+      }
+    };
+
+    timer = window.setTimeout(poll, 1500);
+    return () => {
+      cancelled = true;
+      if (timer !== null) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [auth.token, taskStatus?.task_id, taskStatus?.status]);
 
   return (
     <Stack gap="md">
@@ -351,6 +427,7 @@ export default function SearchPage() {
                         <Group justify="space-between">
                           <Group gap="xs">
                             {draft.source ? <Badge variant="light">{draft.source}</Badge> : null}
+                            {taskStatus ? <Badge variant="light">job: {taskStatus.status}</Badge> : null}
                           </Group>
                           <Button
                             size="sm"
@@ -361,6 +438,11 @@ export default function SearchPage() {
                             확인 후 저장
                           </Button>
                         </Group>
+                        {taskStatus?.detail ? (
+                          <Text size="xs" c="dimmed" mt={6}>
+                            {taskStatus.detail}
+                          </Text>
+                        ) : null}
                       </Grid.Col>
                     </Grid>
                   ) : null}

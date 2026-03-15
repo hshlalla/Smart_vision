@@ -19,6 +19,7 @@ from ...schemas.payload import (
     HybridIndexPreviewRequest,
     HybridIndexPreviewResponse,
     HybridIndexResponse,
+    HybridIndexTaskResponse,
     HybridSearchRequest,
     HybridSearchResponse,
 )
@@ -87,12 +88,35 @@ async def confirm_index_asset(
             metadata.get("category", ""),
         )
         result = hybrid_service.confirm_index_asset(image_b64_list=image_b64_list, metadata=metadata)
-        logger.info("POST /hybrid/index/confirm completed: model_id=%s", result.get("model_id", ""))
+        logger.info(
+            "POST /hybrid/index/confirm queued: model_id=%s task_id=%s",
+            result.get("model_id", ""),
+            result.get("task_id", ""),
+        )
         return HybridIndexResponse(**result)
     except HTTPException:
         raise
     except Exception as exc:
         logger.exception("POST /hybrid/index/confirm failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get(
+    "/index/tasks/{task_id}",
+    response_model=HybridIndexTaskResponse,
+    summary="Get async indexing task status",
+)
+async def get_index_task(
+    task_id: str,
+    _username: str = Depends(require_user),
+) -> HybridIndexTaskResponse:
+    try:
+        result = hybrid_service.get_index_task(task_id)
+        return HybridIndexTaskResponse(**result)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Indexing task not found.") from exc
+    except Exception as exc:
+        logger.exception("GET /hybrid/index/tasks/%s failed: %s", task_id, exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 

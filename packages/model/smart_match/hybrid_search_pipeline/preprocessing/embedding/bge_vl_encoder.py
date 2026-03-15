@@ -15,6 +15,7 @@ import logging
 import torch
 from PIL import Image
 from transformers import AutoModel, AutoProcessor
+from smart_match.device_utils import preferred_inference_dtype, preferred_torch_device
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +31,8 @@ class BGEVLImageEncoder:
         trust_remote_code: bool = True,
         embedding_dim: Optional[int] = None,
     ) -> None:
-        self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self._dtype = dtype if self._device == "cuda" else torch.float32
+        self._device = preferred_torch_device(device)
+        self._dtype = preferred_inference_dtype(self._device, dtype)
 
         # Some fast image processors require torchvision. Fall back to the slow processor when
         # torchvision isn't installed (common on minimal CPU environments).

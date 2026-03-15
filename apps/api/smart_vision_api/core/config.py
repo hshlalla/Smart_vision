@@ -50,6 +50,18 @@ def _cuda_available() -> bool:
     except Exception:
         return False
 
+
+def _mps_available() -> bool:
+    try:
+        import torch
+    except Exception:
+        return False
+
+    try:
+        return bool(torch.backends.mps.is_available())
+    except Exception:
+        return False
+
 class Settings(BaseSettings):
     """Configuration management service."""
 
@@ -83,6 +95,7 @@ class Settings(BaseSettings):
     # CORS (for front-end access)
     CORS_ORIGINS: str = "*"  # comma-separated origins or "*"
     MAX_IMAGE_BASE64_LENGTH: int = 8_000_000
+    WARMUP_TEXT_SEARCH_ON_STARTUP: bool = True
 
     # Simple token auth (optional)
     AUTH_ENABLED: bool = False
@@ -150,7 +163,7 @@ class Settings(BaseSettings):
         3. Verify hardware availability
 
         Returns:
-            str: Selected compute device ("cuda" or "cpu")
+            str: Selected compute device ("cuda", "mps", or "cpu")
         """
         if self.FORCE_CPU:
             return "cpu"
@@ -161,10 +174,14 @@ class Settings(BaseSettings):
             return "cpu"
 
         if device_preference == "cuda":
-            return "cuda" if _cuda_available() else "cpu"
+            return "cuda" if _cuda_available() else ("mps" if _mps_available() else "cpu")
 
         # Default behavior for "auto" setting
-        return "cuda" if _cuda_available() else "cpu"
+        if _cuda_available():
+            return "cuda"
+        if _mps_available():
+            return "mps"
+        return "cpu"
 
     @property
     def equipment_categorization_model_path(self) -> Path:
@@ -188,7 +205,7 @@ class Settings(BaseSettings):
         3. Verify hardware availability
 
         Returns:
-            str: Selected compute device ("cuda" or "cpu")
+            str: Selected compute device ("cuda", "mps", or "cpu")
         """
         if self.FORCE_CPU:
             return "cpu"
@@ -199,10 +216,14 @@ class Settings(BaseSettings):
             return "cpu"
 
         if device_preference == "cuda":
-            return "cuda" if _cuda_available() else "cpu"
+            return "cuda" if _cuda_available() else ("mps" if _mps_available() else "cpu")
 
         # Default behavior for "auto" setting
-        return "cuda" if _cuda_available() else "cpu"
+        if _cuda_available():
+            return "cuda"
+        if _mps_available():
+            return "mps"
+        return "cpu"
 
     @property
     def cors_origins_list(self) -> List[str]:

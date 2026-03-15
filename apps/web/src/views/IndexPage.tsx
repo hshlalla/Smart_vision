@@ -31,6 +31,15 @@ type MetadataDraft = {
   source?: string;
 };
 
+type IndexTaskStatus = {
+  task_id: string;
+  status: string;
+  model_id?: string | null;
+  detail: string;
+};
+
+const TASK_TERMINAL_STATES = new Set(["completed", "failed"]);
+
 const EMPTY_DRAFT: MetadataDraft = {
   model_id: "",
   maker: "",
@@ -42,14 +51,19 @@ const EMPTY_DRAFT: MetadataDraft = {
   source: "",
 };
 
+function cloneEmptyDraft(): MetadataDraft {
+  return { ...EMPTY_DRAFT };
+}
+
 export default function IndexPage() {
   const auth = useAuth();
   const [files, setFiles] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
-  const [draft, setDraft] = useState<MetadataDraft>(EMPTY_DRAFT);
+  const [draft, setDraft] = useState<MetadataDraft>(cloneEmptyDraft);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [encodingPercent, setEncodingPercent] = useState<number | null>(null);
+  const [taskStatus, setTaskStatus] = useState<IndexTaskStatus | null>(null);
 
   useEffect(() => {
     if (!files.length) {
@@ -128,7 +142,7 @@ export default function IndexPage() {
       const image_base64_list = await encodeSelectedFiles();
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (auth.token) headers.Authorization = `Bearer ${auth.token}`;
-      const res = await apiFetchJson<{ status: string; model_id?: string }>("/api/v1/hybrid/index/confirm", {
+      const res = await apiFetchJson<{ status: string; model_id?: string; task_id?: string }>("/api/v1/hybrid/index/confirm", {
         method: "POST",
         headers,
         body: JSON.stringify({
@@ -137,15 +151,25 @@ export default function IndexPage() {
           ...draft,
         }),
       });
+      setTaskStatus(
+        res.task_id
+          ? {
+              task_id: res.task_id,
+              status: res.status,
+              model_id: res.model_id ?? null,
+              detail: "백그라운드 인덱싱 작업이 시작되었습니다.",
+            }
+          : null,
+      );
       notifications.show({
-        color: "teal",
-        title: "인덱싱 완료",
-        message: res.model_id ? `${res.status} (${res.model_id})` : res.status,
+        color: "blue",
+        title: "인덱싱 시작",
+        message: res.model_id ? `백그라운드 작업으로 전환됨 (${res.model_id})` : "백그라운드 작업으로 전환됨",
       });
-      if (res.model_id) {
-        setDraft((prev) => ({ ...prev, model_id: res.model_id || prev.model_id }));
+      if (res.task_id) {
+        setFiles([]);
+        setDraft(cloneEmptyDraft());
       }
-      setFiles([]);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       notifications.show({ color: "red", title: "인덱싱 실패", message: msg });
@@ -154,6 +178,59 @@ export default function IndexPage() {
       setEncodingPercent(null);
     }
   }
+
+  useEffect(() => {
+    if (!taskStatus?.task_id) return;
+    if (TASK_TERMINAL_STATES.has(taskStatus.status)) return;
+
+    let cancelled = false;
+    let timer: number | null = null;
+    const headers: Record<string, string> = {};
+    if (auth.token) headers.Authorization = `Bearer ${auth.token}`;
+
+    const poll = async () => {
+      try {
+        const res = await apiFetchJson<IndexTaskStatus>(`/api/v1/hybrid/index/tasks/${taskStatus.task_id}`, {
+          headers,
+        });
+        if (cancelled) return;
+        setTaskStatus(res);
+        if (res.status === "completed") {
+          notifications.show({
+            color: "teal",
+            title: "인덱싱 완료",
+            message: res.model_id ? `${res.detail} (${res.model_id})` : res.detail,
+          });
+          return;
+        }
+        if (res.status === "failed") {
+          notifications.show({ color: "red", title: "인덱싱 실패", message: res.detail || "백그라운드 작업이 실패했습니다." });
+          return;
+        }
+        timer = window.setTimeout(poll, 2500);
+      } catch (err) {
+        if (cancelled) return;
+        const msg = err instanceof Error ? err.message : String(err);
+        setTaskStatus((prev) =>
+          prev
+            ? {
+                ...prev,
+                detail: `상태 조회 재시도 중: ${msg}`,
+              }
+            : prev,
+        );
+        timer = window.setTimeout(poll, 4000);
+      }
+    };
+
+    timer = window.setTimeout(poll, 1500);
+    return () => {
+      cancelled = true;
+      if (timer !== null) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [auth.token, taskStatus?.task_id, taskStatus?.status]);
 
   return (
     <Stack gap="md">
@@ -202,6 +279,7 @@ export default function IndexPage() {
             <Group justify="space-between">
               <Group gap="xs">
                 {draft.source ? <Badge variant="light">{draft.source}</Badge> : null}
+                {taskStatus ? <Badge variant="outline">job: {taskStatus.status}</Badge> : null}
               </Group>
               <Button leftSection={<IconSparkles size={16} />} loading={previewLoading} onClick={runPreview}>
                 메타 자동 추출
@@ -210,6 +288,11 @@ export default function IndexPage() {
             {encodingPercent !== null ? (
               <Text size="xs" c="dimmed" mt={6}>
                 이미지 인코딩 중... {encodingPercent}%
+              </Text>
+            ) : null}
+            {taskStatus ? (
+              <Text size="xs" c="dimmed" mt={6}>
+                {taskStatus.detail || "백그라운드 작업 진행 중"} {taskStatus.model_id ? `(${taskStatus.model_id})` : ""}
               </Text>
             ) : null}
           </Grid.Col>

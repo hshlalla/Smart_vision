@@ -10,6 +10,14 @@ from pydantic import BaseModel, Field
 class HybridIndexResponse(BaseModel):
     status: str = Field(..., description="Index operation status message")
     model_id: Optional[str] = Field(None, description="Stored model identifier")
+    task_id: Optional[str] = Field(None, description="Async indexing task identifier")
+
+
+class HybridIndexTaskResponse(BaseModel):
+    task_id: str = Field(..., description="Async indexing task identifier")
+    status: str = Field(..., description="Task status")
+    model_id: Optional[str] = Field(None, description="Resolved/stored model identifier")
+    detail: str = Field("", description="Human-readable task detail")
 
 
 class HybridMetadataDraft(BaseModel):

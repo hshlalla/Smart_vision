@@ -14,6 +14,7 @@ from typing import Optional
 
 import torch
 from PIL import Image
+from smart_match.device_utils import preferred_inference_dtype, preferred_torch_device
 from transformers import AutoImageProcessor, AutoModelForCausalLM, AutoProcessor, AutoTokenizer
 
 try:  # Optional: only available on newer `transformers` releases.
@@ -50,7 +51,7 @@ class Qwen3VLCaptioner:
         max_new_tokens: int = 256,
         do_sample: bool = False,
     ) -> None:
-        self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self._device = preferred_torch_device(device)
         self._dtype = dtype
         self._prompt = prompt.strip()
         self._max_new_tokens = max_new_tokens
@@ -61,7 +62,7 @@ class Qwen3VLCaptioner:
         # Keep the fallback reasonably small so demo runs don't trigger multi-GB downloads.
         fallback_model = "Qwen/Qwen2-VL-2B-Instruct"
 
-        dtype = self._dtype if self._device == "cuda" and self._dtype is not None else torch.float32
+        dtype = preferred_inference_dtype(self._device, self._dtype)
 
         try:
             self._processor = self._load_processor(primary_model)

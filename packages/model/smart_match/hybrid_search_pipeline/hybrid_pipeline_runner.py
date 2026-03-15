@@ -16,13 +16,16 @@ import math
 import os
 import re
 import shutil
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 import torch
+from PIL import Image
 from pymilvus import DataType, connections
+from smart_match.device_utils import is_apple_mps_device, preferred_torch_device
 
 from .data_collection.tracker_dataset import TrackerDataset
 from .preprocessing.captioning.gpt_captioner import GPTVLCaptioner
@@ -114,21 +117,8 @@ class HybridSearchOrchestrator:
         self._tracker_dataset_path = Path(tracker_dataset_path).expanduser().resolve() if tracker_dataset_path else None
         self._tracker_dataset: TrackerDataset | None = None
 
-        counters_collection = os.getenv("COUNTERS_COLLECTION", "sv_counters")
-        reserved_collection_names = {
-            image_collection,
-            text_collection,
-            attrs_collection,
-            model_collection,
-            caption_collection,
-            "bge_m3_catalog_chunks",
-        }
-        if counters_collection in reserved_collection_names:
-            raise ValueError(
-                f"COUNTERS_COLLECTION '{counters_collection}' conflicts with data collections. "
-                f"Choose a dedicated counter collection name (e.g. 'sv_counters')."
-            )
-        self.counters = MilvusCounterStore(collection_name=counters_collection)
+        counters_namespace = os.getenv("COUNTERS_COLLECTION", "sv_counters")
+        self.counters = MilvusCounterStore(collection_name=counters_namespace)
 
         media_root_env = os.getenv("MEDIA_ROOT", "media")
         self.media_root = Path(media_root_env).expanduser().resolve()
@@ -175,6 +165,25 @@ class HybridSearchOrchestrator:
             cross_encoder=self.reranker or self._noop_cross_encoder,
             weights=fusion_weights,
         )
+        logger.info(
+            "HybridSearchOrchestrator devices: vision=%s text=%s captioner=%s reranker=%s ocr_enabled(index=%s query=%s)",
+            self._component_device(self.vision_encoder),
+            self._component_device(self.text_encoder),
+            self._component_device(self.captioner),
+            self._component_device(self.reranker),
+            self.enable_ocr_indexing,
+            self.enable_ocr_query,
+        )
+
+    @staticmethod
+    def _component_device(component: Any) -> str:
+        if component is None:
+            return "disabled"
+        for attr in ("_device", "device"):
+            value = getattr(component, attr, None)
+            if value:
+                return str(value)
+        return component.__class__.__name__
 
     def _init_captioner(self):
         prompt = (
@@ -195,13 +204,16 @@ class HybridSearchOrchestrator:
 
         # Default selection:
         # - If CAPTIONER_BACKEND is set, honor it.
-        # - Else if CUDA is available, prefer local Qwen captioner so the
+        # - Else if an accelerated torch device is available, prefer local Qwen captioner so the
         #   retrieval stack stays inside the Qwen3-VL family.
         # - Else if OPENAI_API_KEY exists, fall back to GPT on CPU.
         # - Else disable captioning (CPU local captioning is slow).
         if not backend:
-            if torch.cuda.is_available():
+            preferred_device = preferred_torch_device()
+            if preferred_device == "cuda":
                 backend = "qwen"
+            elif is_apple_mps_device(preferred_device):
+                backend = "gpt" if os.getenv("OPENAI_API_KEY") else "none"
             elif os.getenv("OPENAI_API_KEY"):
                 backend = "gpt"
             else:
@@ -229,8 +241,13 @@ class HybridSearchOrchestrator:
         return None
 
     def _init_reranker(self):
-        if os.getenv("ENABLE_RERANKER", "1").strip().lower() in {"0", "false", "off", "no"}:
-            logger.info("Reranker disabled via ENABLE_RERANKER.")
+        reranker_setting = os.getenv("ENABLE_RERANKER")
+        if reranker_setting is None:
+            enabled = not is_apple_mps_device(preferred_torch_device())
+        else:
+            enabled = reranker_setting.strip().lower() not in {"0", "false", "off", "no"}
+        if not enabled:
+            logger.info("Reranker disabled by local configuration/default.")
             return None
         try:
             return Qwen3VLReranker()
@@ -563,86 +580,123 @@ class HybridSearchOrchestrator:
         t_after_model = time.perf_counter()
         logger.info("Timing: index_model_metadata done in %.2fs for model_id=%s", t_after_model - t_start, model_id)
 
-        record = self.preprocessing(
-            str(image_path),
-            metadata,
-            enable_ocr=self.enable_ocr_indexing,
-        )
-        t_after_preprocess = time.perf_counter()
-        logger.info("Timing: preprocessing done in %.2fs for model_id=%s", t_after_preprocess - t_after_model, model_id)
-
-        normalized_metadata = dict(record.metadata)
-        logger.debug(
-            "Image preprocessed: model_id=%s, image_dim=%d, ocr_dim=%d, caption_dim=%d",
-            model_id,
-            len(record.image_vector),
-            len(record.ocr_vector),
-            len(record.caption_vector),
-        )
-
-        model_record = self._update_model_with_texts(
-            model_id,
-            model_record,
-            normalized_metadata,
-            record.ocr_tokens,
-            record.caption_text,
-        )
-        t_after_update_texts = time.perf_counter()
-        logger.info("Timing: _update_model_with_texts done in %.2fs for model_id=%s",
-                    t_after_update_texts - t_after_preprocess, model_id)
-
-        primary_key = normalized_metadata.get("pk") or metadata.get("pk")
-        if primary_key and self._primary_key_exists(primary_key):
-            logger.warning(
-                "Duplicate primary key detected for model_id=%s (pk=%s); allocating a new key.",
-                model_id,
-                primary_key,
-            )
-            primary_key = None
-
-        if not primary_key:
-            primary_key = self._allocate_image_pk(model_id)
-
-        normalized_metadata["pk"] = primary_key
-
-        ocr_attr_text = record.ocr_text or "\n".join(record.ocr_tokens)
-        caption_attr_text = record.caption_text
-        attrs_payload = {
-            "model_id": model_id,
-            "maker": normalized_metadata.get("maker", ""),
-            "part_number": normalized_metadata.get("part_number", ""),
-            "category": normalized_metadata.get("category", ""),
-            "ocr_text": self._truncate_text(ocr_attr_text, 2048),
-            "caption_text": self._truncate_text(caption_attr_text, 2048),
-            "image_path": "",
-        }
-
-        stored_filename = f"{primary_key}.png"
-        stored_path = self.media_root / stored_filename
+        embedding_image_path = None
         try:
-            shutil.copy(str(image_path), stored_path)
-            attrs_payload["image_path"] = str(stored_path)
-            logger.debug("Stored image copy at %s", stored_path)
-        except Exception as exc:
-            logger.warning("Failed to store image copy for %s: %s", primary_key, exc)
+            embedding_image_path = self._prepare_embedding_image(image_path)
+            record = self.preprocessing(
+                str(image_path),
+                metadata,
+                enable_ocr=self.enable_ocr_indexing,
+                embedding_image_path=str(embedding_image_path),
+            )
+            t_after_preprocess = time.perf_counter()
+            logger.info("Timing: preprocessing done in %.2fs for model_id=%s", t_after_preprocess - t_after_model, model_id)
 
-        t_before_insert = time.perf_counter()
-        self.index.insert(
-            primary_keys=[primary_key],
-            image_vectors=[record.image_vector.tolist()],
-            text_vectors=[record.ocr_vector.tolist()],
-            attrs_rows=[attrs_payload],
-            caption_vectors=[record.caption_vector.tolist()],
-        )
-        self.index.flush()
-        t_after_flush = time.perf_counter()
-        logger.info(
-            "Timing: insert+flush done in %.2fs for model_id=%s",
-            t_after_flush - t_before_insert,
-            model_id,
-        )
-        logger.info("Completed indexing: model_id=%s, image_pk=%s, tokens=%d",
-                    model_id, primary_key, len(record.ocr_tokens))
+            normalized_metadata = dict(record.metadata)
+            logger.debug(
+                "Image preprocessed: model_id=%s, image_dim=%d, ocr_dim=%d, caption_dim=%d",
+                model_id,
+                len(record.image_vector),
+                len(record.ocr_vector),
+                len(record.caption_vector),
+            )
+
+            model_record = self._update_model_with_texts(
+                model_id,
+                model_record,
+                normalized_metadata,
+                record.ocr_tokens,
+                record.caption_text,
+            )
+            t_after_update_texts = time.perf_counter()
+            logger.info("Timing: _update_model_with_texts done in %.2fs for model_id=%s",
+                        t_after_update_texts - t_after_preprocess, model_id)
+
+            primary_key = normalized_metadata.get("pk") or metadata.get("pk")
+            if primary_key and self._primary_key_exists(primary_key):
+                logger.warning(
+                    "Duplicate primary key detected for model_id=%s (pk=%s); allocating a new key.",
+                    model_id,
+                    primary_key,
+                )
+                primary_key = None
+
+            if not primary_key:
+                primary_key = self._allocate_image_pk(model_id)
+
+            normalized_metadata["pk"] = primary_key
+
+            ocr_attr_text = record.ocr_text or "\n".join(record.ocr_tokens)
+            caption_attr_text = record.caption_text
+            attrs_payload = {
+                "model_id": model_id,
+                "maker": normalized_metadata.get("maker", ""),
+                "part_number": normalized_metadata.get("part_number", ""),
+                "category": normalized_metadata.get("category", ""),
+                "ocr_text": self._truncate_text(ocr_attr_text, 2048),
+                "caption_text": self._truncate_text(caption_attr_text, 2048),
+                "image_path": "",
+            }
+
+            stored_filename = f"{primary_key}.jpg"
+            stored_path = self.media_root / stored_filename
+            try:
+                shutil.copy(str(embedding_image_path), stored_path)
+                attrs_payload["image_path"] = str(stored_path)
+                logger.debug("Stored resized image copy at %s", stored_path)
+            except Exception as exc:
+                logger.warning("Failed to store image copy for %s: %s", primary_key, exc)
+
+            t_before_insert = time.perf_counter()
+            self.index.insert(
+                primary_keys=[primary_key],
+                image_vectors=[record.image_vector.tolist()],
+                text_vectors=[record.ocr_vector.tolist()],
+                attrs_rows=[attrs_payload],
+                caption_vectors=[record.caption_vector.tolist()],
+            )
+            self.index.flush()
+            t_after_flush = time.perf_counter()
+            logger.info(
+                "Timing: insert+flush done in %.2fs for model_id=%s",
+                t_after_flush - t_before_insert,
+                model_id,
+            )
+            logger.info("Completed indexing: model_id=%s, image_pk=%s, tokens=%d",
+                        model_id, primary_key, len(record.ocr_tokens))
+        finally:
+            if embedding_image_path is not None:
+                Path(embedding_image_path).unlink(missing_ok=True)
+
+    @staticmethod
+    def _prepare_embedding_image(image_path: str | Path, *, max_side: int = 1024, quality: int = 85) -> Path:
+        source_path = Path(image_path)
+        with Image.open(source_path) as img:
+            img = img.convert("RGB")
+            width, height = img.size
+            longest = max(width, height)
+            if longest > max_side:
+                scale = max_side / float(longest)
+                target_size = (max(1, int(width * scale)), max(1, int(height * scale)))
+                img = img.resize(target_size, Image.Resampling.LANCZOS)
+                logger.info(
+                    "Prepared resized embedding image: source=%s original=%sx%s resized=%sx%s",
+                    source_path,
+                    width,
+                    height,
+                    target_size[0],
+                    target_size[1],
+                )
+            else:
+                logger.info(
+                    "Prepared embedding image without resize: source=%s size=%sx%s",
+                    source_path,
+                    width,
+                    height,
+                )
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+                img.save(tmp, format="JPEG", quality=quality, optimize=True)
+                return Path(tmp.name)
 
     @staticmethod
     def _prefix_from_category(category: str | None) -> str:
