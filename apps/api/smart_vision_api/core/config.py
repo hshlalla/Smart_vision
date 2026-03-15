@@ -74,6 +74,11 @@ class Settings(BaseSettings):
     EQUIPMENT_CATEGORIZATION_MODEL_PATH: str = "equipment_categorization"
     RETRIEVER_DEVICE: str = "auto"
     MILVUS_URI: str = "tcp://standalone:19530"  # Default Milvus URI
+    HYBRID_IMAGE_COLLECTION: str = "qwen3_vl_image_parts"
+    HYBRID_TEXT_COLLECTION: str = "bge_m3_text_parts"
+    HYBRID_ATTRS_COLLECTION: str = "attrs_parts_v2"
+    HYBRID_MODEL_COLLECTION: str = "bge_m3_model_texts"
+    HYBRID_CAPTION_COLLECTION: str = "bge_m3_caption_parts"
 
     # CORS (for front-end access)
     CORS_ORIGINS: str = "*"  # comma-separated origins or "*"

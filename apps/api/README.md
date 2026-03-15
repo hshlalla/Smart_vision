@@ -88,6 +88,16 @@ apps/api/
    - `run_dev.sh`는 `apps/api/.env`를 읽어 환경변수를 자동 로드합니다.
    - `.env`에 `OPENAI_API_KEY` 등이 있으면 별도 `export`가 필요 없습니다.
    - 기본 포트는 `8001`입니다.
+   - OCR 실험용 스위치:
+     - `ENABLE_OCR=0`: 인덱싱/검색 OCR 모두 비활성화
+     - `ENABLE_OCR_INDEXING=0`: 인덱싱 OCR만 비활성화
+     - `ENABLE_OCR_QUERY=0`: 검색 query-time OCR만 비활성화
+   - 컬렉션 분리용 스위치:
+     - `HYBRID_IMAGE_COLLECTION`
+     - `HYBRID_TEXT_COLLECTION`
+     - `HYBRID_ATTRS_COLLECTION`
+     - `HYBRID_MODEL_COLLECTION`
+     - `HYBRID_CAPTION_COLLECTION`
 
 5. **직접 uvicorn 실행(선택)**
    ```bash

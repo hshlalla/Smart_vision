@@ -17,21 +17,33 @@ import torch
 
 try:  # pragma: no cover - runtime dependency
     from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLModel  # type: ignore
-except Exception:  # pragma: no cover
+except Exception as exc:  # pragma: no cover
     Qwen3VLModel = None
+    _QWEN3_VL_MODEL_IMPORT_ERROR = exc
+else:  # pragma: no cover
+    _QWEN3_VL_MODEL_IMPORT_ERROR = None
 
 try:  # pragma: no cover - runtime dependency
     from transformers.models.qwen3_vl.processing_qwen3_vl import Qwen3VLProcessor  # type: ignore
-except Exception:  # pragma: no cover
+except Exception as exc:  # pragma: no cover
     Qwen3VLProcessor = None
+    _QWEN3_VL_PROCESSOR_IMPORT_ERROR = exc
+else:  # pragma: no cover
+    _QWEN3_VL_PROCESSOR_IMPORT_ERROR = None
 
 try:  # pragma: no cover - runtime dependency
     from qwen_vl_utils.vision_process import process_vision_info  # type: ignore
-except Exception:  # pragma: no cover
+except Exception as exc:  # pragma: no cover
+    _QWEN3_VL_UTILS_IMPORT_ERROR = exc
     try:
         from qwen_vl_utils import process_vision_info  # type: ignore
-    except Exception:  # pragma: no cover
+    except Exception as inner_exc:  # pragma: no cover
         process_vision_info = None
+        _QWEN3_VL_UTILS_IMPORT_ERROR = inner_exc
+    else:  # pragma: no cover
+        _QWEN3_VL_UTILS_IMPORT_ERROR = None
+else:  # pragma: no cover
+    _QWEN3_VL_UTILS_IMPORT_ERROR = None
 
 logger = logging.getLogger(__name__)
 
@@ -66,8 +78,21 @@ class Qwen3VLEmbeddingBackend:
         max_length: int,
     ) -> None:
         if Qwen3VLModel is None or Qwen3VLProcessor is None or process_vision_info is None:
+            details = []
+            if _QWEN3_VL_MODEL_IMPORT_ERROR is not None:
+                details.append(f"model import failed: {type(_QWEN3_VL_MODEL_IMPORT_ERROR).__name__}: {_QWEN3_VL_MODEL_IMPORT_ERROR}")
+            if _QWEN3_VL_PROCESSOR_IMPORT_ERROR is not None:
+                details.append(
+                    f"processor import failed: {type(_QWEN3_VL_PROCESSOR_IMPORT_ERROR).__name__}: {_QWEN3_VL_PROCESSOR_IMPORT_ERROR}"
+                )
+            if _QWEN3_VL_UTILS_IMPORT_ERROR is not None:
+                details.append(
+                    f"qwen-vl-utils import failed: {type(_QWEN3_VL_UTILS_IMPORT_ERROR).__name__}: {_QWEN3_VL_UTILS_IMPORT_ERROR}"
+                )
+            detail_text = f" Details: {'; '.join(details)}" if details else ""
             raise ImportError(
                 "Qwen3-VL embedding requires transformers>=4.57 with Qwen3-VL support and qwen-vl-utils installed."
+                + detail_text
             )
 
         self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")

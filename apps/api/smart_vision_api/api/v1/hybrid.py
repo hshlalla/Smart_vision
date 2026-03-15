@@ -14,10 +14,86 @@ from ...core.auth import require_user
 from ...core.config import settings
 from ...core.logger import get_logger
 from ...services.hybrid import hybrid_service
-from ...schemas.payload import HybridIndexResponse, HybridSearchRequest, HybridSearchResponse
+from ...schemas.payload import (
+    HybridIndexConfirmRequest,
+    HybridIndexPreviewRequest,
+    HybridIndexPreviewResponse,
+    HybridIndexResponse,
+    HybridSearchRequest,
+    HybridSearchResponse,
+)
 
 router = APIRouter(prefix="/hybrid", tags=["Hybrid Search"])
 logger = get_logger("api.hybrid")
+
+
+@router.post(
+    "/index/preview",
+    response_model=HybridIndexPreviewResponse,
+    summary="Preview GPT metadata for an uploaded image",
+)
+async def preview_index_asset(
+    request: HybridIndexPreviewRequest,
+    _username: str = Depends(require_user),
+) -> HybridIndexPreviewResponse:
+    try:
+        image_b64_list = [img for img in ([request.image_base64] if request.image_base64 else []) + list(request.image_base64_list or []) if img]
+        if not image_b64_list:
+            raise HTTPException(status_code=422, detail="at least one image is required.")
+        if any(len(img or "") > settings.MAX_IMAGE_BASE64_LENGTH for img in image_b64_list):
+            raise HTTPException(
+                status_code=413,
+                detail=f"image_base64 is too large (max {settings.MAX_IMAGE_BASE64_LENGTH} chars per image).",
+            )
+        logger.info(
+            "POST /hybrid/index/preview received: image_count=%d image_base64_len=%d",
+            len(image_b64_list),
+            len(image_b64_list[0] or ""),
+        )
+        result = hybrid_service.preview_index_asset(image_b64_list=image_b64_list)
+        return HybridIndexPreviewResponse(**result)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("POST /hybrid/index/preview failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post(
+    "/index/confirm",
+    response_model=HybridIndexResponse,
+    summary="Confirm metadata and store asset in Milvus",
+)
+async def confirm_index_asset(
+    request: HybridIndexConfirmRequest,
+    _username: str = Depends(require_user),
+) -> HybridIndexResponse:
+    try:
+        image_b64_list = [img for img in ([request.image_base64] if request.image_base64 else []) + list(request.image_base64_list or []) if img]
+        if not image_b64_list:
+            raise HTTPException(status_code=422, detail="at least one image is required.")
+        if any(len(img or "") > settings.MAX_IMAGE_BASE64_LENGTH for img in image_b64_list):
+            raise HTTPException(
+                status_code=413,
+                detail=f"image_base64 is too large (max {settings.MAX_IMAGE_BASE64_LENGTH} chars per image).",
+            )
+        metadata = request.model_dump(exclude={"image_base64", "image_base64_list"})
+        logger.info(
+            "POST /hybrid/index/confirm received: image_count=%d model_id=%s maker=%s part_number=%s category=%s",
+            len(image_b64_list),
+            metadata.get("model_id", ""),
+            metadata.get("maker", ""),
+            metadata.get("part_number", ""),
+            metadata.get("category", ""),
+        )
+        result = hybrid_service.confirm_index_asset(image_b64_list=image_b64_list, metadata=metadata)
+        logger.info("POST /hybrid/index/confirm completed: model_id=%s", result.get("model_id", ""))
+        return HybridIndexResponse(**result)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("POST /hybrid/index/confirm failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post(

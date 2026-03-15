@@ -53,7 +53,13 @@ class PreprocessingPipeline:
         self._metadata_normalizer = metadata_normalizer
         self._captioner = captioner
 
-    def __call__(self, image_path: str, metadata: Dict[str, str]) -> NormalizedRecord:
+    def __call__(
+        self,
+        image_path: str,
+        metadata: Dict[str, str],
+        *,
+        enable_ocr: bool = True,
+    ) -> NormalizedRecord:
         logger.info(
             "Preprocessing start: image=%s metadata_keys=%s",
             image_path,
@@ -61,19 +67,24 @@ class PreprocessingPipeline:
         )
         total_start = time.perf_counter()
 
-        stage_start = time.perf_counter()
-        ocr_output = self._ocr_engine.extract(image_path)
-        ocr_duration = time.perf_counter() - stage_start
-        logger.info(
-            "OCR extraction complete: tokens=%d duration=%.2fs",
-            len(ocr_output.tokens),
-            ocr_duration,
-        )
-        tokens = [
-            token.text if hasattr(token, "text") else str(token)
-            for token in ocr_output.tokens
-        ]
-        ocr_text = " ".join(tokens).strip()
+        tokens: List[str] = []
+        ocr_text = ""
+        if enable_ocr and self._ocr_engine is not None:
+            stage_start = time.perf_counter()
+            ocr_output = self._ocr_engine.extract(image_path)
+            ocr_duration = time.perf_counter() - stage_start
+            logger.info(
+                "OCR extraction complete: tokens=%d duration=%.2fs",
+                len(ocr_output.tokens),
+                ocr_duration,
+            )
+            tokens = [
+                token.text if hasattr(token, "text") else str(token)
+                for token in ocr_output.tokens
+            ]
+            ocr_text = " ".join(tokens).strip()
+        else:
+            logger.info("OCR extraction skipped: enable_ocr=%s engine=%s", enable_ocr, bool(self._ocr_engine))
 
         stage_start = time.perf_counter()
         image_vector = self._vision_encoder.encode(image_path)

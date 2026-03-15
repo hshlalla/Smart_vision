@@ -105,6 +105,19 @@ print(results)
 > - Milvus 2.4+ 인스턴스가 실행 중이어야 하며, 기본 URI는 `tcp://localhost:19530` 입니다.  
 > - 검색 전에 최소 하나 이상의 자산을 `preprocess_and_index`로 등록해주세요.
 
+### OCR 실험 스위치
+
+- `ENABLE_OCR=0`
+  - 인덱싱/검색 양쪽 OCR을 모두 끕니다.
+- `ENABLE_OCR_INDEXING=0`
+  - 인덱싱 시 OCR만 끕니다.
+- `ENABLE_OCR_QUERY=0`
+  - 검색 시 query-time OCR만 끕니다.
+- `HYBRID_IMAGE_COLLECTION`, `HYBRID_TEXT_COLLECTION`, `HYBRID_ATTRS_COLLECTION`, `HYBRID_MODEL_COLLECTION`, `HYBRID_CAPTION_COLLECTION`
+  - 실험별로 Milvus 컬렉션을 분리할 때 사용합니다.
+
+실험용 `C1`/`C2` 비교를 할 때는 OCR on/off 상태별로 별도 Milvus 컬렉션에 다시 인덱싱하는 것을 권장합니다.
+
 ### 2. API / 데모와 연동
 
 `smart-match-model` 패키지는 API(`apps/api`)와 데모(`apps/demo`)에서 그대로 import하여 사용합니다.

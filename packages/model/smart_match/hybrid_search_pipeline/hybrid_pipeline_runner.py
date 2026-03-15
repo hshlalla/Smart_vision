@@ -56,6 +56,13 @@ if not logging.getLogger().handlers:
     )
 
 
+def _env_flag(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
 @dataclass
 class MilvusConnectionConfig:
     uri: str = "tcp://standalone:19530"
@@ -78,13 +85,21 @@ class HybridSearchOrchestrator:
         text_collection: str = "bge_m3_text_parts",
         attrs_collection: str = "attrs_parts_v2",
         model_collection: str = "bge_m3_model_texts",
+        caption_collection: str = "bge_m3_caption_parts",
         fusion_weights: FusionWeights = FusionWeights(alpha=0.5, beta=0.3, gamma=0.2),
         tracker_dataset_path: str | Path | None = None,
     ) -> None:
         self._connect_milvus(milvus)
         self.vision_encoder = Qwen3VLImageEncoder()
         self.text_encoder = BGEM3TextEncoder()
-        self.ocr_engine = PaddleOCRVLPipeline()
+        enable_ocr_default = _env_flag("ENABLE_OCR", True)
+        self.enable_ocr_indexing = _env_flag("ENABLE_OCR_INDEXING", enable_ocr_default)
+        self.enable_ocr_query = _env_flag("ENABLE_OCR_QUERY", enable_ocr_default)
+        if self.enable_ocr_indexing or self.enable_ocr_query:
+            self.ocr_engine = PaddleOCRVLPipeline()
+        else:
+            logger.info("OCR disabled for both indexing and query paths via environment flags.")
+            self.ocr_engine = None
         self.captioner = self._init_captioner()
         self.reranker = self._init_reranker()
         self.metadata_normalizer = MetadataNormalizer()
@@ -105,7 +120,7 @@ class HybridSearchOrchestrator:
             text_collection,
             attrs_collection,
             model_collection,
-            "bge_m3_caption_parts",
+            caption_collection,
             "bge_m3_catalog_chunks",
         }
         if counters_collection in reserved_collection_names:
@@ -132,7 +147,7 @@ class HybridSearchOrchestrator:
         self.index = HybridMilvusIndex(
             image_cfg=CollectionConfig(name=image_collection, dimension=self.vision_encoder.embedding_dim),
             text_cfg=CollectionConfig(name=text_collection, dimension=self.text_encoder.embedding_dim),
-            caption_cfg=CollectionConfig(name="bge_m3_caption_parts", dimension=self.text_encoder.embedding_dim),
+            caption_cfg=CollectionConfig(name=caption_collection, dimension=self.text_encoder.embedding_dim),
             attrs_fields=[
                 FieldSpec("model_id", DataType.VARCHAR, max_length=256),
                 FieldSpec("maker", DataType.VARCHAR, max_length=256),
@@ -151,7 +166,7 @@ class HybridSearchOrchestrator:
             text_collection_name=text_collection,
             attrs_collection_name=attrs_collection,
             model_collection_name=model_collection,
-            caption_collection_name="bge_m3_caption_parts",
+            caption_collection_name=caption_collection,
         )
         self.index.create_indexes()
         self.index.load()
@@ -548,7 +563,11 @@ class HybridSearchOrchestrator:
         t_after_model = time.perf_counter()
         logger.info("Timing: index_model_metadata done in %.2fs for model_id=%s", t_after_model - t_start, model_id)
 
-        record = self.preprocessing(str(image_path), metadata)
+        record = self.preprocessing(
+            str(image_path),
+            metadata,
+            enable_ocr=self.enable_ocr_indexing,
+        )
         t_after_preprocess = time.perf_counter()
         logger.info("Timing: preprocessing done in %.2fs for model_id=%s", t_after_preprocess - t_after_model, model_id)
 
@@ -586,7 +605,7 @@ class HybridSearchOrchestrator:
 
         normalized_metadata["pk"] = primary_key
 
-        ocr_attr_text = record.ocr_text or "\n".join(record.ocr_tokens) or record.text_corpus
+        ocr_attr_text = record.ocr_text or "\n".join(record.ocr_tokens)
         caption_attr_text = record.caption_text
         attrs_payload = {
             "model_id": model_id,
@@ -799,7 +818,11 @@ class HybridSearchOrchestrator:
         if query_image:
             logger.info("Running image/OCR/caption search")
             t_preprocess = time.perf_counter()
-            query_record = self.preprocessing(str(query_image), {})
+            query_record = self.preprocessing(
+                str(query_image),
+                {},
+                enable_ocr=self.enable_ocr_query,
+            )
             timings_ms["preprocessing"] = round((time.perf_counter() - t_preprocess) * 1000, 2)
 
             image_vector = query_record.image_vector.tolist()

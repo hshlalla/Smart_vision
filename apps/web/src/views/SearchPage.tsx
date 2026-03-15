@@ -11,15 +11,37 @@ import {
   Stack,
   Text,
   TextInput,
+  Textarea,
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconPhoto, IconSearch } from "@tabler/icons-react";
+import { IconPhoto, IconSearch, IconSparkles, IconUpload } from "@tabler/icons-react";
 
 import { useAuth } from "../state/auth";
 import { apiFetchJson, toBase64 } from "../utils/api";
 
 type SearchResult = Record<string, any>;
+type MetadataDraft = {
+  model_id: string;
+  maker: string;
+  part_number: string;
+  category: string;
+  description: string;
+  product_info: string;
+  price_value: number | null;
+  source?: string;
+};
+
+const EMPTY_DRAFT: MetadataDraft = {
+  model_id: "",
+  maker: "",
+  part_number: "",
+  category: "",
+  description: "",
+  product_info: "",
+  price_value: null,
+  source: "",
+};
 
 function resolveMediaUrl(imagePath: string | null | undefined): string | null {
   if (!imagePath) return null;
@@ -45,6 +67,9 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [encodingPercent, setEncodingPercent] = useState<number | null>(null);
+  const [draft, setDraft] = useState<MetadataDraft>(EMPTY_DRAFT);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [confirmLoading, setConfirmLoading] = useState(false);
 
   const hasQuery = useMemo(() => Boolean(queryText.trim() || file), [queryText, file]);
 
@@ -85,6 +110,9 @@ export default function SearchPage() {
         body: JSON.stringify(payload),
       });
       setResults(res.results || []);
+      if ((res.results || []).length > 0) {
+        setDraft(EMPTY_DRAFT);
+      }
       console.info("[HybridSearch] request completed", {
         hasImage: Boolean(selected),
         resultCount: res.results?.length || 0,
@@ -96,6 +124,89 @@ export default function SearchPage() {
       notifications.show({ color: "red", title: "검색 실패", message: msg });
     } finally {
       setLoading(false);
+      setEncodingPercent(null);
+    }
+  }
+
+  function setDraftField<K extends keyof MetadataDraft>(key: K, value: MetadataDraft[K]) {
+    setDraft((prev) => ({ ...prev, [key]: value }));
+  }
+
+  async function encodeSelectedFile(): Promise<string> {
+    if (!file) {
+      throw new Error("이미지를 선택하세요.");
+    }
+    return toBase64(file, {
+      maxBytes: 5 * 1024 * 1024,
+      maxDimension: 1600,
+      quality: 0.82,
+      onProgress: (pct) => setEncodingPercent(pct),
+    });
+  }
+
+  async function runWritebackPreview() {
+    if (!file) {
+      notifications.show({ color: "yellow", title: "이미지 필요", message: "등록 초안을 만들 이미지를 선택하세요." });
+      return;
+    }
+    setPreviewLoading(true);
+    try {
+      const image_base64 = await encodeSelectedFile();
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (auth.token) headers.Authorization = `Bearer ${auth.token}`;
+      const res = await apiFetchJson<{ draft: MetadataDraft }>("/api/v1/hybrid/index/preview", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ image_base64 }),
+      });
+      setDraft({
+        model_id: res.draft.model_id || "",
+        maker: res.draft.maker || "",
+        part_number: res.draft.part_number || "",
+        category: res.draft.category || "",
+        description: res.draft.description || "",
+        product_info: res.draft.product_info || "",
+        price_value: typeof res.draft.price_value === "number" ? res.draft.price_value : null,
+        source: res.draft.source || "openai",
+      });
+      notifications.show({ color: "teal", title: "등록 초안 생성 완료", message: "수정 후 저장할 수 있습니다." });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      notifications.show({ color: "red", title: "등록 초안 생성 실패", message: msg });
+    } finally {
+      setPreviewLoading(false);
+      setEncodingPercent(null);
+    }
+  }
+
+  async function confirmWriteback() {
+    if (!file) {
+      notifications.show({ color: "yellow", title: "이미지 필요", message: "저장할 이미지를 선택하세요." });
+      return;
+    }
+    setConfirmLoading(true);
+    try {
+      const image_base64 = await encodeSelectedFile();
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (auth.token) headers.Authorization = `Bearer ${auth.token}`;
+      const res = await apiFetchJson<{ status: string; model_id?: string }>("/api/v1/hybrid/index/confirm", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ image_base64, ...draft }),
+      });
+      notifications.show({
+        color: "teal",
+        title: "저장 완료",
+        message: res.model_id ? `${res.status} (${res.model_id})` : res.status,
+      });
+      if (res.model_id) {
+        setDraft((prev) => ({ ...prev, model_id: res.model_id || prev.model_id }));
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      notifications.show({ color: "red", title: "저장 실패", message: msg });
+    } finally {
+      setConfirmLoading(false);
       setEncodingPercent(null);
     }
   }
@@ -165,7 +276,97 @@ export default function SearchPage() {
       <Stack gap="sm">
         {results.length === 0 ? (
           <Card withBorder radius="lg" p="lg">
-            <Text c="dimmed">검색 결과가 여기에 표시됩니다.</Text>
+            <Stack gap="sm">
+              <Text c="dimmed">검색 결과가 여기에 표시됩니다.</Text>
+              {file ? (
+                <>
+                  <Group justify="space-between">
+                    <Text fw={600}>검색 실패 시 신규 자산으로 등록</Text>
+                    <Button
+                      size="sm"
+                      variant="light"
+                      leftSection={<IconSparkles size={16} />}
+                      loading={previewLoading}
+                      onClick={runWritebackPreview}
+                    >
+                      등록 초안 생성
+                    </Button>
+                  </Group>
+                  {(draft.description || draft.maker || draft.part_number || draft.category || draft.product_info) ? (
+                    <Grid gutter="md">
+                      <Grid.Col span={{ base: 12, md: 6 }}>
+                        <TextInput
+                          label="Model ID"
+                          placeholder="비우면 자동 할당"
+                          value={draft.model_id}
+                          onChange={(e) => setDraftField("model_id", e.currentTarget.value)}
+                        />
+                      </Grid.Col>
+                      <Grid.Col span={{ base: 12, md: 6 }}>
+                        <TextInput
+                          label="Maker"
+                          value={draft.maker}
+                          onChange={(e) => setDraftField("maker", e.currentTarget.value)}
+                        />
+                      </Grid.Col>
+                      <Grid.Col span={{ base: 12, md: 6 }}>
+                        <TextInput
+                          label="Part number"
+                          value={draft.part_number}
+                          onChange={(e) => setDraftField("part_number", e.currentTarget.value)}
+                        />
+                      </Grid.Col>
+                      <Grid.Col span={{ base: 12, md: 6 }}>
+                        <TextInput
+                          label="Category"
+                          value={draft.category}
+                          onChange={(e) => setDraftField("category", e.currentTarget.value)}
+                        />
+                      </Grid.Col>
+                      <Grid.Col span={{ base: 12, md: 6 }}>
+                        <TextInput
+                          label="Product info"
+                          value={draft.product_info}
+                          onChange={(e) => setDraftField("product_info", e.currentTarget.value)}
+                        />
+                      </Grid.Col>
+                      <Grid.Col span={{ base: 12, md: 6 }}>
+                        <NumberInput
+                          label="Price value"
+                          value={draft.price_value ?? undefined}
+                          onChange={(v) => setDraftField("price_value", typeof v === "number" ? v : null)}
+                          min={0}
+                          thousandSeparator=","
+                        />
+                      </Grid.Col>
+                      <Grid.Col span={12}>
+                        <Textarea
+                          label="Description"
+                          minRows={3}
+                          value={draft.description}
+                          onChange={(e) => setDraftField("description", e.currentTarget.value)}
+                        />
+                      </Grid.Col>
+                      <Grid.Col span={12}>
+                        <Group justify="space-between">
+                          <Group gap="xs">
+                            {draft.source ? <Badge variant="light">{draft.source}</Badge> : null}
+                          </Group>
+                          <Button
+                            size="sm"
+                            leftSection={<IconUpload size={16} />}
+                            loading={confirmLoading}
+                            onClick={confirmWriteback}
+                          >
+                            확인 후 저장
+                          </Button>
+                        </Group>
+                      </Grid.Col>
+                    </Grid>
+                  ) : null}
+                </>
+              ) : null}
+            </Stack>
           </Card>
         ) : (
           results.map((r, idx) => (

@@ -30,6 +30,67 @@ def test_hybrid_search_success(monkeypatch):
     assert resp.json()["results"][0]["model_id"] == "a000001"
 
 
+def test_hybrid_index_preview_success(monkeypatch):
+    def fake_preview(*, image_b64: str):
+        assert image_b64 == "abc123"
+        return {
+            "status": "preview_ready",
+            "draft": {
+                "model_id": "",
+                "maker": "Fuji Electric",
+                "part_number": "SC50BAA",
+                "category": "magnetic_contactor",
+                "description": "Fuji Electric magnetic contactor",
+                "product_info": "magnetic contactor",
+                "price_value": 120000,
+                "source": "openai",
+            },
+        }
+
+    monkeypatch.setattr(hybrid_api.hybrid_service, "preview_index_asset", fake_preview)
+
+    app = FastAPI()
+    app.include_router(hybrid_api.router, prefix="/api/v1")
+    app.dependency_overrides[require_user] = lambda: "tester"
+    client = TestClient(app)
+
+    resp = client.post("/api/v1/hybrid/index/preview", json={"image_base64": "abc123"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "preview_ready"
+    assert body["draft"]["maker"] == "Fuji Electric"
+
+
+def test_hybrid_index_confirm_success(monkeypatch):
+    def fake_confirm(*, image_b64: str, metadata: dict):
+        assert image_b64 == "abc123"
+        assert metadata["maker"] == "Fuji Electric"
+        return {"status": "indexed", "model_id": "m000001"}
+
+    monkeypatch.setattr(hybrid_api.hybrid_service, "confirm_index_asset", fake_confirm)
+
+    app = FastAPI()
+    app.include_router(hybrid_api.router, prefix="/api/v1")
+    app.dependency_overrides[require_user] = lambda: "tester"
+    client = TestClient(app)
+
+    resp = client.post(
+        "/api/v1/hybrid/index/confirm",
+        json={
+            "image_base64": "abc123",
+            "model_id": "",
+            "maker": "Fuji Electric",
+            "part_number": "SC50BAA",
+            "category": "magnetic_contactor",
+            "description": "Fuji Electric magnetic contactor",
+            "product_info": "magnetic contactor",
+            "price_value": 120000,
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json()["model_id"] == "m000001"
+
+
 def test_hybrid_search_rejects_too_large_image(monkeypatch):
     monkeypatch.setattr(settings, "MAX_IMAGE_BASE64_LENGTH", 20)
 
