@@ -8,6 +8,14 @@
 - `cm3070_past_exam_answer_bank.md`
   - 최근 past exam(2023-09, 2024-03, 2024-09, 2025-03)에 대한 프로젝트 맞춤형 답안 초안
   - 실제 시험에서는 모든 문항을 답하는 것이 아니라, 보통 그 해 지시사항에 맞춰 3문항만 선택해 답해야 하므로 여기서는 재사용 가능한 장문 답안 재료 중심으로 정리함
+- `cm3070_mock_exam_answer_bank.md`
+  - `submission/pastexam/CM3070 mock exam.pdf`의 질문 순서에 맞춘 영문 답안 초안
+- `cm3070_mock_exam_answer_bank_ko.md`
+  - mock exam 질문에 대한 한국어 답안 초안
+- `cm3070_additional_practice_answers.md`
+  - past/mock 원문 밖의 추가 연습문항에 대한 영문 답안
+- `cm3070_additional_practice_answers_ko.md`
+  - 추가 연습문항에 대한 한국어 답안
 
 ## Project framing used throughout
 

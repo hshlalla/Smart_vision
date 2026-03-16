@@ -39,8 +39,12 @@ The most honest description of the current outcome is:
 
 ### Technical challenge shorthand
 
-The hardest technical challenge was not simply “building image search.”
-It was combining **visual similarity**, **small noisy textual cues**, and **open-world retrieval** in a way that remains useful when OCR is unreliable.
+The hardest technical problem was not simply “doing OCR” or “doing image search,” but reliably
+reading highly variable labels and combining that imperfect OCR/VLM evidence with body-image signals
+to rank the right candidates. Document-oriented OCR was not naturally optimised for these labels,
+VLM improved many cases but still struggled with damaged or erased markings, and weighted fusion of
+multiple models created both calibration and latency trade-offs.
+
 
 ### Evaluation shorthand
 
@@ -160,29 +164,77 @@ The timeline was broadly iterative. I did not treat planning as something finish
 
 ### (c) Analyse effectiveness of the initial project plan
 
-The plan worked well in two ways. First, the overall system vision remained stable: retrieval-first assistance was the right framing from early on. Second, modular separation between frontend, API, and model logic helped the project scale when catalog retrieval and agent orchestration were later added.
+The initial plan worked better than I expected. The core problem definition stabilised relatively
+early, and the main planned features were achieved faster than I had anticipated. That gave me room
+later to add extensions such as the agent path and the catalog path.
 
-What I would improve is evaluation planning and timing. In hindsight, I should have automated retrieval, CER, and latency benchmarking earlier instead of leaving some of it until late in the project. My objectives did not fundamentally change, but they became more precise. Initially the project could have been described too broadly as “AI part identification”; later I refined it into a more defensible claim: an evidence-aware shortlist assistant with partial but real evaluation support.
+However, in hindsight, the main weakness was not failure to meet the original aims but difficulty in
+controlling scope after those aims were reached. Once the core system was working, new feature ideas
+kept appearing, and prioritisation became harder. In that sense, the planning challenge was less
+about shortfall and more about how to limit expansion after early success.
+
+The project’s framing also became more precise over time. At first it could easily have been
+described too broadly as “AI part identification,” but later I refined it into a more defensible
+claim: an evidence-backed shortlist assistant.
+
+I also did not treat early success on the core goals as sufficient in itself.
+If the system cannot identify items accurately enough, people simply will not use it. For that reason,
+after the core goals were reached I focused as much as possible on improving model performance.
+Accuracy remained the most important quality criterion even while new features were being added.
+
 
 ## Q2. Technical challenge and solution
 
 ### (a) Most significant technical challenge
 
-The most significant technical challenge was combining multiple weak and heterogeneous signals into a useful retrieval system for fine-grained, open-world identification. In this domain, two parts may look similar globally but differ in tiny text details. At the same time, OCR can fail because of blur, glare, or small labels. This means neither pure image similarity nor pure OCR is sufficient on its own.
+The most significant technical challenge was reliable label recognition under realistic secondhand
+conditions. I initially approached the problem through OCR, but general-purpose OCR is more suited
+to document-like text and the labels in this project varied greatly in layout, quality, and damage.
+It was not realistic to hand-code label-specific logic for every variant, so error handling became
+very difficult.
 
-I consider this the most important challenge because it directly connects to the project goal. If the system cannot robustly combine image, text, metadata, and uncertainty-aware ranking, then it cannot provide reliable assistance in realistic listing scenarios.
+Introducing a VLM solved many of these problems, but not all of them. Damaged labels, partially
+erased characters, and unclear text still remained hard cases, and in those cases the system could
+retrieve the wrong product. I therefore added other signals, such as recognising the product body
+itself, but this also had limits: when two products looked almost identical and differed mainly in
+label text, body-image features alone were not discriminative enough.
+
+A further challenge was score fusion. Once multiple models were used together, performance depended
+not only on each component but on how their outputs were combined. Weighted sums were difficult to
+calibrate: if I gave too much weight to label evidence, cases with occluded or invisible labels could
+be pushed toward the wrong product. Using many models at once also created latency constraints.
 
 ### (b) Approach taken
 
-I addressed this challenge by designing a hybrid retrieval pipeline. The system can ingest user images and metadata, extract or infer textual evidence, create embeddings, search multiple Milvus collections, and combine candidates using weighted signals. The pipeline also supports caption-derived retrieval and metadata-aware ranking, and later evolved toward Qwen3-VL-based image retrieval plus reranking, while retaining BGE-M3 and OCR evidence where appropriate.
+I addressed this by moving away from a pure OCR-based approach and toward a hybrid retrieval design
+that combines OCR, VLM-based image understanding, body-image similarity, metadata, and text-based
+signals. OCR remained important, but it was no longer treated as the only decisive source of truth.
 
-I also added catalog retrieval and an agent orchestration path so that the system could go beyond direct image search and use internal document evidence when needed. On the reliability side, I made writeback opt-in by default and added regression tests and latency instrumentation.
+Concretely, I built a pipeline that accepts user images and metadata, performs preprocessing, OCR,
+embedding generation, retrieval across multiple Milvus collections, weighted fusion, and ranking. I
+also ran repeated experiments and tuning passes to adapt the weighting and search flow to this
+project rather than using a generic configuration. When direct identification was weak, I added
+catalog retrieval and agent orchestration so that the system could use additional evidence.
+
+To address speed limits, I also kept lighter paths available where possible rather than always using
+the heaviest multimodal route. Overall, the strategy was to combine imperfect signals in a practical
+way rather than assuming that a single model would solve the problem completely.
 
 ### (c) Evaluate effectiveness
 
-The approach was effective because it produced a working prototype that reflects the actual complexity of the problem. It supports end-to-end search and demonstrates why hybrid evidence is necessary. It also improved on a naïve image-only framing by making uncertainty and user review explicit.
+This approach was clearly effective in practical terms. Introducing a VLM solved many cases that were
+hard under OCR-only logic, and iterative experimentation helped me gradually tune the system for this
+specific project. I consider that optimisation work one of the project’s real strengths.
 
-However, the approach is not fully validated yet. Its architectural effectiveness is clearer than its quantitative completeness. If I revisited the system, I would keep the hybrid design but strengthen the controlled ablation and benchmarking earlier, so that the comparative value of each signal could be shown more rigorously.
+At the same time, the limits are also clear. Damaged or erased labels remain difficult, and cases
+where the body is nearly identical but only the label differs are still challenging. Hand-tuned
+weighted fusion also has clear limits, and there is a real trade-off between accuracy and speed.
+
+So I would describe the approach as a successful and realistic prototype rather than a complete
+fundamental solution. If I revisited the system, I would not rely only on orchestration. I would also
+strengthen domain-specific fine-tuning or specialist components for label recognition and pursue more
+systematic fusion calibration.
+
 
 ## Q3. Background literature
 
@@ -220,7 +272,21 @@ These are natural extensions because they build directly on the present architec
 
 ### (c) Advice for future builders
 
-My main advice is to preserve honest claim boundaries. Do not add features faster than you can evaluate them. Keep the system modular, version the data and indexes carefully, and treat OCR as useful but uncertain evidence. The biggest pitfall is assuming that visually plausible retrieval is sufficient without strong metadata, calibration, and review mechanisms.
+My main advice is to define the problem very narrowly and clearly from the start. AI models are
+improving so quickly that features which once seemed special can become standard very fast. Because
+of that, the key is not simply to keep adding capabilities, but to define exactly what problem is
+being solved and under what constraints.
+
+In my case, an important constraint was that company information could not leave the organisation,
+which made on-premise and local-model use central. Under that kind of constraint, simply
+orchestrating many weaker models through weighted sums may not be the strongest long-term strategy.
+A more competitive direction may be to make one model or one component extremely strong within a
+narrow specialist scope.
+
+For that reason, I would advise future builders to focus not only on making the agent pipeline more
+complex, but also on identifying the project’s core value and strengthening domain-specific
+fine-tuning or specialist components when appropriate.
+
 
 ## Q5. Presentation
 
@@ -250,9 +316,19 @@ In my project, the literature review justified several crucial decisions: using 
 
 ### (b) What material made it into the literature review and what did not
 
-I included material that directly informed the project’s central problem and solution, such as image retrieval systems, OCR in noisy settings, multimodal embeddings, vector search, and industrial or marketplace examples. This material belonged in the literature review because it shaped the system requirements and architecture.
+The literature review should prioritise material that can justify the project’s central design
+choices over time. For this project, that means keeping conceptually durable work on multimodal
+retrieval, OCR uncertainty, vector search, and human-in-the-loop assistance near the centre.
 
-I omitted material that was only loosely connected or operationally useful but not conceptually central. For example, low-level package documentation, isolated implementation notes, or narrow troubleshooting sources may have helped development, but they were not suitable as core literature-review content. The literature review should foreground conceptually important and relatively reliable sources, not every source consulted during coding.
+By contrast, some material becomes outdated very quickly. Version-specific model comparisons,
+short-term benchmark results, and implementation-focused comparisons can be useful during
+engineering, but they are weaker as core literature-review evidence because the AI landscape changes
+so rapidly. In practice, after model upgrades I sometimes observed stronger results than in earlier
+experiments, which reduced the long-term value of some early comparison material.
+
+So the best approach is to foreground durable conceptual literature while using fast-moving model
+comparison material more narrowly as engineering support.
+
 
 ### (c) What belongs in an appendix
 
@@ -304,15 +380,28 @@ If I repeated the project, I would improve artifact automation further, especial
 
 ### (i) What I achieved
 
-I achieved a working, end-to-end prototype for AI-assisted secondhand part identification. The system supports hybrid indexing and search, evidence-aware retrieval, catalog lookup, and an agent-assisted path across a modular architecture.
+I achieved the core planned goals relatively quickly and was then able to extend the project further
+with the agent path and the catalog path. In other words, I did not just build a search experiment;
+I built an end-to-end prototype across web, API, and model layers.
 
 ### (ii) Best achievement
 
-My best achievement was the retrieval-first system design itself. Instead of forcing the problem into a standard classifier, I designed a system that fits the real domain: open-world inventory, fine-grained variation, noisy images, and user need for verification. I consider this my best achievement because it is both technically substantial and conceptually well justified.
+My best achievement was the amount of experimentation and optimisation I put into the project.
+I tried multiple models, compared them in practice, and kept tuning the system to fit the actual
+problem rather than leaving it at a generic configuration. I would most strongly praise the way I
+used experimental results to improve the system incrementally.
 
 ### (iii) Lowest-quality part and how to improve it
 
-The least high-quality part of the project is the completeness of the evaluation layer rather than the architecture. In particular, aggregate CER benchmarking, latency percentile reporting, and full comparative ablation are not yet as mature as they should be. To improve this, I would automate these evaluation pipelines earlier and treat benchmark generation as a first-class implementation task.
+The weakest part of the project was that I relied heavily on orchestration while the core fine-tuning
+or domain-specific specialist modelling remained comparatively weak. Combining multiple models helped,
+but I think the deeper competitive value of a future version would come from making the core model
+much stronger on the exact task.
+
+If I had another chance, I would improve that part directly. Rather than only refining weighted-sum
+orchestration, I would invest more in domain-specific fine-tuning, specialist label-recognition
+components, and more systematic score calibration.
+
 
 ## Q5. Further work
 
