@@ -17,12 +17,15 @@ import { IconDatabaseSearch, IconLogout, IconMessageChatbot, IconSearch, IconUpl
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../state/auth";
+import LanguageToggle from "../components/LanguageToggle";
+import { useI18n } from "../state/i18n";
 
 export default function AppShellLayout() {
   const [opened, { toggle, close }] = useDisclosure();
   const navigate = useNavigate();
   const location = useLocation();
   const auth = useAuth();
+  const { t } = useI18n();
 
   useEffect(() => {
     close();
@@ -38,10 +41,10 @@ export default function AppShellLayout() {
   }, []);
 
   const navItems = [
-    { label: "Chat", to: "/app/chat", icon: <IconMessageChatbot size={18} /> },
-    { label: "Search", to: "/app/search", icon: <IconSearch size={18} /> },
-    { label: "Index", to: "/app/index", icon: <IconUpload size={18} /> },
-    { label: "Catalog", to: "/app/catalog", icon: <IconDatabaseSearch size={18} /> },
+    { label: t("shell.navChat"), to: "/app/chat", icon: <IconMessageChatbot size={18} /> },
+    { label: t("shell.navSearch"), to: "/app/search", icon: <IconSearch size={18} /> },
+    { label: t("shell.navIndex"), to: "/app/index", icon: <IconUpload size={18} /> },
+    { label: t("shell.navCatalog"), to: "/app/catalog", icon: <IconDatabaseSearch size={18} /> },
   ];
 
   return (
@@ -64,25 +67,27 @@ export default function AppShellLayout() {
         <Group h="100%" px="md" justify="space-between">
           <Group gap="sm">
             <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
-            <Title order={4}>Smart Vision</Title>
+            <Title order={4}>{t("common.appName")}</Title>
             <Text size="sm" c="dimmed" visibleFrom="md">
-              Hybrid Search Console
+              {t("shell.subtitle")}
             </Text>
           </Group>
 
-          <Menu position="bottom-end" withinPortal>
+          <Group gap="xs">
+            <LanguageToggle />
+            <Menu position="bottom-end" withinPortal>
             <Menu.Target>
               <UnstyledButton>
                 <Group gap="sm">
                   <Avatar radius="xl" size="sm" />
                   <Text size="sm" fw={600} visibleFrom="sm">
-                    {auth.user?.username || "User"}
+                    {auth.user?.username || t("common.user")}
                   </Text>
                 </Group>
               </UnstyledButton>
             </Menu.Target>
             <Menu.Dropdown>
-              <Menu.Label>Account</Menu.Label>
+              <Menu.Label>{t("common.account")}</Menu.Label>
               <Menu.Item
                 leftSection={<IconLogout style={{ width: rem(16), height: rem(16) }} />}
                 onClick={() => {
@@ -90,10 +95,11 @@ export default function AppShellLayout() {
                   navigate("/login", { replace: true });
                 }}
               >
-                로그아웃
+                {t("common.logout")}
               </Menu.Item>
             </Menu.Dropdown>
-          </Menu>
+            </Menu>
+          </Group>
         </Group>
       </AppShell.Header>
 
@@ -114,7 +120,7 @@ export default function AppShellLayout() {
 
         <AppShell.Section p="xs">
           <Text size="xs" c="dimmed">
-            API: {import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"}
+            {t("common.api")}: {import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"}
           </Text>
         </AppShell.Section>
       </AppShell.Navbar>

@@ -9,6 +9,7 @@ import { BrowserRouter } from "react-router-dom";
 
 import App from "./App";
 import { AuthProvider } from "./state/auth";
+import { I18nProvider } from "./state/i18n";
 import { theme } from "./theme";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
@@ -16,9 +17,11 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <MantineProvider theme={theme} defaultColorScheme="dark">
       <Notifications position="top-right" />
       <BrowserRouter>
-        <AuthProvider>
-          <App />
-        </AuthProvider>
+        <I18nProvider>
+          <AuthProvider>
+            <App />
+          </AuthProvider>
+        </I18nProvider>
       </BrowserRouter>
     </MantineProvider>
   </React.StrictMode>,

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from "
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { notifications } from "@mantine/notifications";
 
+import { useI18n } from "./i18n";
 import { apiFetchJson } from "../utils/api";
 
 type AuthUser = {
@@ -96,6 +97,7 @@ export function useLoginFlow() {
   const navigate = useNavigate();
   const location = useLocation() as { state?: { from?: string } };
   const auth = useAuth();
+  const { t } = useI18n();
 
   return {
     async login(username: string, password: string) {
@@ -103,10 +105,14 @@ export function useLoginFlow() {
         await auth.login(username, password);
         const dest = location.state?.from || "/app/search";
         navigate(dest, { replace: true });
-        notifications.show({ color: "teal", title: "로그인 성공", message: "환영합니다." });
+        notifications.show({
+          color: "teal",
+          title: t("login.successTitle"),
+          message: t("login.successMessage"),
+        });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        notifications.show({ color: "red", title: "로그인 실패", message: msg });
+        notifications.show({ color: "red", title: t("login.failureTitle"), message: msg });
         throw err;
       }
     },

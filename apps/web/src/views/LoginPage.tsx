@@ -14,11 +14,14 @@ import {
 } from "@mantine/core";
 import { IconLock, IconUser } from "@tabler/icons-react";
 
+import LanguageToggle from "../components/LanguageToggle";
 import { useAuth, useLoginFlow } from "../state/auth";
+import { useI18n } from "../state/i18n";
 
 export default function LoginPage() {
   const auth = useAuth();
   const { login } = useLoginFlow();
+  const { t } = useI18n();
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -43,14 +46,15 @@ export default function LoginPage() {
     >
       <Container size="xs" py={80}>
         <Stack gap="lg">
-          <Stack gap={6}>
-            <Title order={2} c="white">
-              Smart Vision
-            </Title>
-            <Text c="dimmed">
-              모바일에서도 접속 가능한 검색/인덱싱 UI (Gradio 대체)
-            </Text>
-          </Stack>
+          <Group justify="space-between" align="flex-start">
+            <Stack gap={6}>
+              <Title order={2} c="white">
+                {t("common.appName")}
+              </Title>
+              <Text c="dimmed">{t("login.tagline")}</Text>
+            </Stack>
+            <LanguageToggle />
+          </Group>
 
           <Card
             withBorder
@@ -65,7 +69,7 @@ export default function LoginPage() {
             <form onSubmit={onSubmit}>
               <Stack gap="md">
                 <TextInput
-                  label="아이디"
+                  label={t("login.username")}
                   leftSection={<IconUser size={16} />}
                   placeholder="admin"
                   value={username}
@@ -74,7 +78,7 @@ export default function LoginPage() {
                   disabled={auth.authEnabled === false}
                 />
                 <PasswordInput
-                  label="비밀번호"
+                  label={t("login.password")}
                   leftSection={<IconLock size={16} />}
                   placeholder="••••••••"
                   value={password}
@@ -89,18 +93,18 @@ export default function LoginPage() {
                     variant="light"
                     onClick={() => (window.location.href = "/app/search")}
                   >
-                    인증이 꺼져있음 — 계속하기
+                    {t("login.continueNoAuth")}
                   </Button>
                 ) : (
                   <Button type="submit" loading={loading} fullWidth radius="md">
-                    로그인
+                    {t("login.signIn")}
                   </Button>
                 )}
                 <Group justify="space-between">
                   <Text size="sm" c="dimmed">
                     {auth.authEnabled === false
-                      ? "API 인증이 비활성화되어 있습니다."
-                      : "API에서 인증을 켜면 로그인 필수"}
+                      ? t("login.authDisabled")
+                      : t("login.authRequired")}
                   </Text>
                   <Anchor
                     size="sm"
@@ -108,7 +112,7 @@ export default function LoginPage() {
                     target="_blank"
                     c="dimmed"
                   >
-                    API Docs
+                    {t("common.apiDocs")}
                   </Anchor>
                 </Group>
               </Stack>

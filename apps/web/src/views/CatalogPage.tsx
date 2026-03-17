@@ -18,6 +18,7 @@ import { IconDatabaseSearch, IconFileSearch, IconFileTypePdf, IconUpload } from 
 
 import MarkdownBlocks from "../components/MarkdownBlocks";
 import { useAuth } from "../state/auth";
+import { useI18n } from "../state/i18n";
 import { apiFetchJson } from "../utils/api";
 
 type CatalogSearchResult = {
@@ -34,6 +35,7 @@ type CatalogSearchResult = {
 
 export default function CatalogPage() {
   const auth = useAuth();
+  const { t } = useI18n();
 
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [source, setSource] = useState("");
@@ -52,7 +54,7 @@ export default function CatalogPage() {
 
   async function indexPdf() {
     if (!pdfFile) {
-      notifications.show({ color: "yellow", title: "PDF 필요", message: "인덱싱할 PDF를 선택하세요." });
+      notifications.show({ color: "yellow", title: t("catalog.pdfNeededTitle"), message: t("catalog.pdfNeededMessage") });
       return;
     }
 
@@ -82,13 +84,17 @@ export default function CatalogPage() {
 
       notifications.show({
         color: "teal",
-        title: "카탈로그 인덱싱 완료",
-        message: `${res.source} · ${res.pages_indexed}페이지 · ${res.chunks_indexed}청크`,
+        title: t("catalog.indexCompletedTitle"),
+        message: t("catalog.indexCompletedMessage", {
+          source: res.source,
+          pages: res.pages_indexed,
+          chunks: res.chunks_indexed,
+        }),
       });
       setPdfFile(null);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      notifications.show({ color: "red", title: "인덱싱 실패", message: msg });
+      notifications.show({ color: "red", title: t("catalog.indexFailedTitle"), message: msg });
     } finally {
       setIndexLoading(false);
     }
@@ -96,7 +102,7 @@ export default function CatalogPage() {
 
   async function searchCatalog() {
     if (!queryText.trim()) {
-      notifications.show({ color: "yellow", title: "질문 필요", message: "검색할 텍스트를 입력하세요." });
+      notifications.show({ color: "yellow", title: t("catalog.queryNeededTitle"), message: t("catalog.queryNeededMessage") });
       return;
     }
 
@@ -116,10 +122,14 @@ export default function CatalogPage() {
         }),
       });
       setResults(res.results || []);
-      notifications.show({ color: "teal", title: "검색 완료", message: `결과 ${res.results?.length || 0}건` });
+      notifications.show({
+        color: "teal",
+        title: t("catalog.searchCompletedTitle"),
+        message: t("catalog.searchCompletedMessage", { count: res.results?.length || 0 }),
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      notifications.show({ color: "red", title: "검색 실패", message: msg });
+      notifications.show({ color: "red", title: t("catalog.searchFailedTitle"), message: msg });
     } finally {
       setSearchLoading(false);
     }
@@ -128,21 +138,21 @@ export default function CatalogPage() {
   return (
     <Stack gap="md">
       <Group justify="space-between" align="baseline">
-        <Title order={3}>Catalog RAG</Title>
-        <Badge variant="light">PDF index + semantic retrieval</Badge>
+        <Title order={3}>{t("catalog.title")}</Title>
+        <Badge variant="light">{t("catalog.badge")}</Badge>
       </Group>
 
       <Card withBorder radius="lg" p="lg">
         <Group justify="space-between" mb="sm">
-          <Text fw={700}>PDF 카탈로그 인덱싱</Text>
+          <Text fw={700}>{t("catalog.pdfIndexTitle")}</Text>
           <IconFileTypePdf size={18} />
         </Group>
 
         <Grid gutter="md">
           <Grid.Col span={12}>
             <FileInput
-              label="PDF 파일"
-              placeholder="카탈로그 PDF를 선택하세요"
+              label={t("catalog.pdfLabel")}
+              placeholder={t("catalog.pdfPlaceholder")}
               accept="application/pdf"
               value={pdfFile}
               onChange={setPdfFile}
@@ -153,32 +163,32 @@ export default function CatalogPage() {
           </Grid.Col>
           <Grid.Col span={{ base: 12, md: 6 }}>
             <TextInput
-              label="Source 이름(옵션)"
-              placeholder="예: Internal Catalog 2025"
+              label={t("catalog.sourceLabel")}
+              placeholder={t("catalog.sourcePlaceholder")}
               value={source}
               onChange={(e) => setSource(e.currentTarget.value)}
             />
           </Grid.Col>
           <Grid.Col span={{ base: 12, md: 6 }}>
             <TextInput
-              label="Maker(옵션)"
-              placeholder="예: ACME"
+              label={t("catalog.makerLabel")}
+              placeholder={t("catalog.makerPlaceholder")}
               value={indexMaker}
               onChange={(e) => setIndexMaker(e.currentTarget.value)}
             />
           </Grid.Col>
           <Grid.Col span={{ base: 12, md: 6 }}>
             <TextInput
-              label="Model ID(옵션)"
-              placeholder="예: NB-ADP-16V"
+              label={t("catalog.modelIdLabel")}
+              placeholder={t("catalog.modelIdPlaceholder")}
               value={indexModelId}
               onChange={(e) => setIndexModelId(e.currentTarget.value)}
             />
           </Grid.Col>
           <Grid.Col span={{ base: 12, md: 6 }}>
             <TextInput
-              label="Part Number(옵션)"
-              placeholder="예: ADP-16V-3A"
+              label={t("catalog.partNumberLabel")}
+              placeholder={t("catalog.partNumberPlaceholder")}
               value={indexPartNumber}
               onChange={(e) => setIndexPartNumber(e.currentTarget.value)}
             />
@@ -187,14 +197,14 @@ export default function CatalogPage() {
             <Switch
               checked={usePaddleOcr}
               onChange={(e) => setUsePaddleOcr(e.currentTarget.checked)}
-              label="PaddleOCR-VL 문서 구조 추출 사용"
-              description="켜면 PDF 페이지를 이미지로 렌더링해 표와 레이아웃을 markdown 기반으로 추출합니다. 끄면 PDF 텍스트만 임베딩합니다."
+              label={t("catalog.usePaddleLabel")}
+              description={t("catalog.usePaddleDescription")}
             />
           </Grid.Col>
           <Grid.Col span={12}>
             <Group justify="flex-end">
               <Button leftSection={<IconUpload size={16} />} loading={indexLoading} onClick={indexPdf}>
-                PDF 인덱싱
+                {t("catalog.indexButton")}
               </Button>
             </Group>
           </Grid.Col>
@@ -203,29 +213,29 @@ export default function CatalogPage() {
 
       <Card withBorder radius="lg" p="lg">
         <Group justify="space-between" mb="sm">
-          <Text fw={700}>카탈로그 검색</Text>
+          <Text fw={700}>{t("catalog.searchTitle")}</Text>
           <IconDatabaseSearch size={18} />
         </Group>
         <Grid gutter="md">
           <Grid.Col span={{ base: 12, md: 7 }}>
             <TextInput
-              label="질문 / 검색어"
-              placeholder="예: 16V 3A 어댑터의 출력 스펙과 안전 규격"
+              label={t("catalog.queryLabel")}
+              placeholder={t("catalog.queryPlaceholder")}
               value={queryText}
               onChange={(e) => setQueryText(e.currentTarget.value)}
             />
           </Grid.Col>
           <Grid.Col span={{ base: 12, md: 3 }}>
             <TextInput
-              label="Model ID 필터(옵션)"
-              placeholder="예: NB-ADP-16V"
+              label={t("catalog.modelIdFilterLabel")}
+              placeholder={t("catalog.modelIdPlaceholder")}
               value={searchModelId}
               onChange={(e) => setSearchModelId(e.currentTarget.value)}
             />
           </Grid.Col>
           <Grid.Col span={{ base: 12, md: 2 }}>
             <NumberInput
-              label="Top-K"
+              label={t("catalog.topKLabel")}
               min={1}
               max={50}
               value={topK}
@@ -234,8 +244,8 @@ export default function CatalogPage() {
           </Grid.Col>
           <Grid.Col span={{ base: 12, md: 7 }}>
             <TextInput
-              label="Part Number 필터(옵션)"
-              placeholder="예: ADP-16V-3A"
+              label={t("catalog.partNumberFilterLabel")}
+              placeholder={t("catalog.partNumberPlaceholder")}
               value={searchPartNumber}
               onChange={(e) => setSearchPartNumber(e.currentTarget.value)}
             />
@@ -243,7 +253,7 @@ export default function CatalogPage() {
           <Grid.Col span={{ base: 12, md: 5 }}>
             <Group justify="flex-end" style={{ height: "100%" }} align="end">
               <Button leftSection={<IconFileSearch size={16} />} loading={searchLoading} onClick={searchCatalog}>
-                검색
+                {t("catalog.searchButton")}
               </Button>
             </Group>
           </Grid.Col>
@@ -253,24 +263,24 @@ export default function CatalogPage() {
       <Stack gap="sm">
         {results.length === 0 ? (
           <Card withBorder radius="lg" p="lg">
-            <Text c="dimmed">카탈로그 검색 결과가 여기에 표시됩니다.</Text>
+            <Text c="dimmed">{t("catalog.noResults")}</Text>
           </Card>
         ) : (
           results.map((r, idx) => (
             <Card key={`${r.document_id}-${r.page}-${r.chunk_id}-${idx}`} withBorder radius="lg" p="lg">
               <Group justify="space-between" align="flex-start">
                 <Stack gap={2}>
-                  <Text fw={700}>{r.source || "unknown source"}</Text>
+                  <Text fw={700}>{r.source || t("catalog.unknownSource")}</Text>
                   <Text size="sm" c="dimmed">
-                    page {r.page} · chunk {r.chunk_id}
+                    {t("catalog.pageChunkLabel", { page: r.page, chunk: r.chunk_id })}
                   </Text>
                 </Stack>
-                <Badge variant="light">score {Number(r.score || 0).toFixed(3)}</Badge>
+                <Badge variant="light">{t("catalog.scoreBadge", { score: Number(r.score || 0).toFixed(3) })}</Badge>
               </Group>
               <Group gap="xs" mt="sm">
-                {r.model_id ? <Badge variant="outline">model: {r.model_id}</Badge> : null}
-                {r.part_number ? <Badge variant="outline">pn: {r.part_number}</Badge> : null}
-                {r.maker ? <Badge variant="outline">maker: {r.maker}</Badge> : null}
+                {r.model_id ? <Badge variant="outline">{t("catalog.modelBadge", { value: r.model_id })}</Badge> : null}
+                {r.part_number ? <Badge variant="outline">{t("catalog.pnBadge", { value: r.part_number })}</Badge> : null}
+                {r.maker ? <Badge variant="outline">{t("catalog.makerBadge", { value: r.maker })}</Badge> : null}
               </Group>
               <Stack gap="xs" mt="sm">
                 <MarkdownBlocks content={r.text} />
