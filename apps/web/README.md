@@ -16,10 +16,15 @@ Current UI features
 - Search
   - image/text hybrid search
   - reranker toggle for experiments
+- Catalog
+  - PDF text mode or PaddleOCR-VL mode can be selected at indexing time
+  - markdown-style table chunks are rendered as tables in catalog results when possible
 - Chat
   - agent bot with internal search first
   - matched product image is shown when agent returns an internal identified item
+  - if catalog RAG evidence is used, the answer can include document source/page citations in addition to the matched product card
   - internal inventory answers and open-world web answers can still differ depending on the question
+  - simple markdown tables in answers are rendered as tables when possible
 
 ## Setup
 

@@ -124,6 +124,10 @@ def _build_caption_map(row: dict[str, Any], repo_root: Path) -> dict[str, str]:
     return out
 
 
+def _deterministic_image_pk(model_id: str, image_index: int) -> str:
+    return f"{model_id}::img_{image_index:03d}"
+
+
 def run_unified_ingestion(
     *,
     dataset_path: Path,
@@ -142,6 +146,7 @@ def run_unified_ingestion(
     skipped: list[str] = []
     errors: list[str] = []
     prepared = 0
+    skipped_images = 0
 
     for row in _iter_jsonl(dataset_path):
         if split and _clean_text(row.get("split")) != split:
@@ -169,8 +174,14 @@ def run_unified_ingestion(
                 assert orchestrator is not None
                 orchestrator.index_model_metadata(model_id, metadata)
                 default_caption = _clean_text(row.get("generated_caption"))
-                for path in image_paths:
+                for image_index, path in enumerate(image_paths, start=1):
+                    pk = _deterministic_image_pk(model_id, image_index)
+                    existing = orchestrator.index.fetch_attributes([pk], output_fields=["pk"])
+                    if existing:
+                        skipped_images += 1
+                        continue
                     per_image_metadata = dict(metadata)
+                    per_image_metadata["pk"] = pk
                     per_image_metadata["caption_text"] = caption_map.get(str(path), default_caption)
                     orchestrator.preprocess_and_index(path, per_image_metadata)
                 indexed.append(f"{model_id} ({len(image_paths)} images)")
@@ -185,6 +196,7 @@ def run_unified_ingestion(
         "prepared": prepared,
         "indexed": indexed,
         "skipped": skipped,
+        "skipped_images": skipped_images,
         "errors": errors,
     }
 
@@ -217,6 +229,7 @@ def main() -> None:
     logger.info("Prepared: %d", summary["prepared"])
     logger.info("Indexed: %d", len(summary["indexed"]))
     logger.info("Skipped: %d", len(summary["skipped"]))
+    logger.info("Skipped images already present: %d", summary["skipped_images"])
     if summary["errors"]:
         logger.error("Errors: %s", summary["errors"])
 

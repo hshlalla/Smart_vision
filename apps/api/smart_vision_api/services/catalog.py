@@ -14,6 +14,7 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple
 
+import pypdfium2 as pdfium
 from fastapi import UploadFile
 from pymilvus import Collection, CollectionSchema, DataType, FieldSchema, connections, utility
 from pypdf import PdfReader
@@ -61,6 +62,7 @@ class CatalogRagService:
         self._collection: Collection | None = None
         self._text_encoder: BGEM3TextEncoder | None = None
         self._ocr_engine: Any | None = None
+        self._vl_ocr_engine: Any | None = None
         self._chunk_size = 900
         self._chunk_overlap = 150
         self._query_cache = _TTLCache(ttl_seconds=90, max_items=256)
@@ -92,6 +94,24 @@ class CatalogRagService:
             logger.exception("Failed to initialize PaddleOCR for catalog OCR fallback.")
             self._ocr_engine = False
         return self._ocr_engine if self._ocr_engine is not False else None
+
+    @property
+    def vl_ocr_engine(self):
+        if self._vl_ocr_engine is not None:
+            return self._vl_ocr_engine if self._vl_ocr_engine is not False else None
+        try:
+            from smart_match.hybrid_search_pipeline.preprocessing.ocr.OCR import PaddleOCRVLPipeline
+        except Exception:
+            logger.exception("Failed to import PaddleOCR-VL pipeline for catalog indexing.")
+            self._vl_ocr_engine = False
+            return None
+        try:
+            logger.info("Initializing PaddleOCR-VL for catalog indexing...")
+            self._vl_ocr_engine = PaddleOCRVLPipeline()
+        except Exception:
+            logger.exception("Failed to initialize PaddleOCR-VL for catalog indexing.")
+            self._vl_ocr_engine = False
+        return self._vl_ocr_engine if self._vl_ocr_engine is not False else None
 
     @staticmethod
     def _escape_expr(value: str) -> str:
@@ -187,6 +207,56 @@ class CatalogRagService:
                 logger.debug("Failed image OCR fallback on a PDF image.", exc_info=True)
         return " ".join(collected).strip()
 
+    @staticmethod
+    def _merge_text_sources(primary: str, secondary: str) -> str:
+        primary = (primary or "").strip()
+        secondary = (secondary or "").strip()
+        if not primary:
+            return secondary
+        if not secondary:
+            return primary
+        if primary in secondary:
+            return secondary
+        if secondary in primary:
+            return primary
+        return f"{primary}\n\n{secondary}"
+
+    def _extract_page_vl_markdown(self, pdf_path: Path, page_index: int) -> str:
+        engine = self.vl_ocr_engine
+        if engine is None:
+            return ""
+        doc = pdfium.PdfDocument(str(pdf_path))
+        try:
+            page = doc[page_index]
+            bitmap = page.render(scale=2.0)
+            pil_image = bitmap.to_pil()
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_img:
+                img_path = Path(tmp_img.name)
+            try:
+                pil_image.save(img_path, format="PNG")
+                result = engine.extract(str(img_path))
+            finally:
+                img_path.unlink(missing_ok=True)
+            parts = [
+                str(getattr(result, "structured_text", "") or "").strip(),
+                str(result.markdown_text or "").strip(),
+                str(result.combined_text or "").strip(),
+                str(getattr(result, "spotting_text", "") or "").strip(),
+            ]
+            if getattr(result, "table_htmls", None):
+                parts.extend(
+                    html.strip()
+                    for html in result.table_htmls.values()
+                    if isinstance(html, str) and html.strip()
+                )
+            deduped_parts: List[str] = []
+            for part in parts:
+                if part and part not in deduped_parts:
+                    deduped_parts.append(part)
+            return "\n\n".join(deduped_parts).strip()
+        finally:
+            doc.close()
+
     def _ensure_collection(self) -> Collection:
         if self._collection is not None:
             return self._collection
@@ -250,6 +320,7 @@ class CatalogRagService:
         model_id: str = "",
         part_number: str = "",
         maker: str = "",
+        use_paddle_ocr: bool = False,
     ) -> Dict[str, object]:
         filename = (pdf.filename or "catalog.pdf").strip()
         source_name = (source or filename).strip() or "catalog.pdf"
@@ -277,10 +348,15 @@ class CatalogRagService:
             chunk_texts: List[str] = []
 
             for page_idx, page in enumerate(reader.pages, start=1):
-                text = self._extract_page_text(page)
-                if not text:
-                    # Scanned or image-heavy PDFs: OCR fallback on embedded images.
-                    text = self._extract_page_image_ocr(page)
+                extracted_text = self._extract_page_text(page)
+                if use_paddle_ocr:
+                    ocr_markdown = self._extract_page_vl_markdown(pdf_path, page_idx - 1)
+                    text = self._merge_text_sources(ocr_markdown, extracted_text)
+                else:
+                    text = extracted_text
+                    if not text:
+                        # Scanned or image-heavy PDFs: OCR fallback on embedded images.
+                        text = self._extract_page_image_ocr(page)
                 chunks = self._chunk_text(text)
                 if not chunks:
                     continue
@@ -329,6 +405,7 @@ class CatalogRagService:
                 "source": source_name,
                 "pages_indexed": pages_indexed,
                 "chunks_indexed": chunks_indexed,
+                "extraction_mode": "paddleocr_vl_markdown" if use_paddle_ocr else "pdf_text",
             }
         finally:
             pdf_path.unlink(missing_ok=True)

@@ -13,6 +13,7 @@ class CatalogIndexResponse(BaseModel):
     source: str = Field(..., description="Source name (usually PDF filename)")
     pages_indexed: int = Field(..., ge=0)
     chunks_indexed: int = Field(..., ge=0)
+    extraction_mode: str = Field(..., description="Catalog text extraction mode used during indexing")
 
 
 class CatalogSearchRequest(BaseModel):

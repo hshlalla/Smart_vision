@@ -785,7 +785,12 @@ class HybridSearchService:
             ocr_result = self._metadata_preview_runtime.ocr_engine.extract(str(image_path))
             raw_text = " ".join(
                 part.strip()
-                for part in [ocr_result.combined_text or "", ocr_result.markdown_text or ""]
+                for part in [
+                    getattr(ocr_result, "structured_text", "") or "",
+                    ocr_result.markdown_text or "",
+                    ocr_result.combined_text or "",
+                    getattr(ocr_result, "spotting_text", "") or "",
+                ]
                 if part and str(part).strip()
             ).strip()
             tokens = [token.text.strip() for token in ocr_result.tokens if getattr(token, "text", "").strip()]
@@ -905,7 +910,12 @@ class HybridSearchService:
             ocr_result = self._metadata_preview_runtime.ocr_engine.extract(str(image_path))
             text = " ".join(
                 part.strip()
-                for part in [ocr_result.combined_text or "", ocr_result.markdown_text or ""]
+                for part in [
+                    getattr(ocr_result, "structured_text", "") or "",
+                    ocr_result.markdown_text or "",
+                    ocr_result.combined_text or "",
+                    getattr(ocr_result, "spotting_text", "") or "",
+                ]
                 if part and str(part).strip()
             ).strip()
             if text:

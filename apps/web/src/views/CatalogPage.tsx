@@ -8,6 +8,7 @@ import {
   Group,
   NumberInput,
   Stack,
+  Switch,
   Text,
   TextInput,
   Title,
@@ -15,6 +16,7 @@ import {
 import { notifications } from "@mantine/notifications";
 import { IconDatabaseSearch, IconFileSearch, IconFileTypePdf, IconUpload } from "@tabler/icons-react";
 
+import MarkdownBlocks from "../components/MarkdownBlocks";
 import { useAuth } from "../state/auth";
 import { apiFetchJson } from "../utils/api";
 
@@ -38,6 +40,7 @@ export default function CatalogPage() {
   const [indexModelId, setIndexModelId] = useState("");
   const [indexPartNumber, setIndexPartNumber] = useState("");
   const [indexMaker, setIndexMaker] = useState("");
+  const [usePaddleOcr, setUsePaddleOcr] = useState(false);
   const [indexLoading, setIndexLoading] = useState(false);
 
   const [queryText, setQueryText] = useState("");
@@ -61,6 +64,7 @@ export default function CatalogPage() {
       form.append("model_id", indexModelId.trim());
       form.append("part_number", indexPartNumber.trim());
       form.append("maker", indexMaker.trim());
+      form.append("use_paddle_ocr", usePaddleOcr ? "true" : "false");
 
       const headers: Record<string, string> = {};
       if (auth.token) headers.Authorization = `Bearer ${auth.token}`;
@@ -180,6 +184,14 @@ export default function CatalogPage() {
             />
           </Grid.Col>
           <Grid.Col span={12}>
+            <Switch
+              checked={usePaddleOcr}
+              onChange={(e) => setUsePaddleOcr(e.currentTarget.checked)}
+              label="PaddleOCR-VL 문서 구조 추출 사용"
+              description="켜면 PDF 페이지를 이미지로 렌더링해 표와 레이아웃을 markdown 기반으로 추출합니다. 끄면 PDF 텍스트만 임베딩합니다."
+            />
+          </Grid.Col>
+          <Grid.Col span={12}>
             <Group justify="flex-end">
               <Button leftSection={<IconUpload size={16} />} loading={indexLoading} onClick={indexPdf}>
                 PDF 인덱싱
@@ -260,9 +272,9 @@ export default function CatalogPage() {
                 {r.part_number ? <Badge variant="outline">pn: {r.part_number}</Badge> : null}
                 {r.maker ? <Badge variant="outline">maker: {r.maker}</Badge> : null}
               </Group>
-              <Text size="sm" mt="sm" style={{ whiteSpace: "pre-wrap" }}>
-                {r.text}
-              </Text>
+              <Stack gap="xs" mt="sm">
+                <MarkdownBlocks content={r.text} />
+              </Stack>
             </Card>
           ))
         )}
@@ -270,4 +282,3 @@ export default function CatalogPage() {
     </Stack>
   );
 }
-

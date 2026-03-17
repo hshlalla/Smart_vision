@@ -85,7 +85,17 @@ class PreprocessingPipeline:
                 token.text if hasattr(token, "text") else str(token)
                 for token in ocr_output.tokens
             ]
-            ocr_text = " ".join(tokens).strip()
+            rich_ocr_parts = [
+                str(getattr(ocr_output, "structured_text", "") or "").strip(),
+                str(getattr(ocr_output, "markdown_text", "") or "").strip(),
+                str(getattr(ocr_output, "combined_text", "") or "").strip(),
+                str(getattr(ocr_output, "spotting_text", "") or "").strip(),
+            ]
+            deduped_parts: List[str] = []
+            for part in rich_ocr_parts:
+                if part and part not in deduped_parts:
+                    deduped_parts.append(part)
+            ocr_text = "\n\n".join(deduped_parts).strip()
         else:
             logger.info("OCR extraction skipped: enable_ocr=%s engine=%s", enable_ocr, bool(self._ocr_engine))
 

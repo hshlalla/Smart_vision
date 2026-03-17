@@ -57,6 +57,50 @@ It serves hybrid search, async indexing, authentication, agent chat, catalog sea
 - If an internal match is present, the response includes identified item metadata and image data for the frontend.
 - If needed, the agent can still use external web search or catalog search.
 
+### Catalog RAG
+
+- Catalog PDF indexing supports two practical modes from the UI:
+  - PDF text mode
+    - Extracts text directly from the PDF and embeds it.
+    - Best for text-native PDFs.
+  - PaddleOCR-VL mode
+    - Renders each page as an image and uses PaddleOCR-VL to recover markdown-like text with better table/layout preservation.
+    - Better for scanned PDFs, image-heavy pages, and table-centric catalogs.
+- In PaddleOCR-VL mode, extracted markdown-style table text is stored as chunk text and can later be cited by search or agent answers.
+
+### Agent Response Composition
+
+When the agent uses multiple tools in one turn, the final answer is composed from multiple evidence channels:
+
+- Internal hybrid search
+  - Used for registered inventory lookup.
+  - Produces the matched product candidate with fields like `model_id`, `maker`, `part_number`, `category`, `description`, and representative `images`.
+  - The API exposes the best accepted internal match separately as `identified` in the response body so the frontend can show product metadata and image cards.
+- Catalog RAG
+  - Used for internal PDF manuals, catalogs, and spec documents.
+  - Produces chunk-level evidence with `source` and `page`.
+  - The natural-language answer may summarize this evidence inline.
+  - If the answer text omits document citations, the API appends a `Catalog Evidence` section with source/page references.
+- External web search
+  - Used only when the agent needs open-world or price information beyond the internal inventory/catalog data.
+  - Returned as `sources` with title and URL.
+
+In practice, this means a single chat response can contain:
+
+1. A natural-language summary answer.
+2. An internal matched item card via `identified`.
+3. Internal PDF evidence via catalog citations.
+4. External links in `sources` when web search was used.
+
+Typical combination pattern:
+
+- `hybrid_search`
+  - identifies which registered part best matches the question
+- `catalog_search`
+  - explains what the indexed document says about that part
+- final answer
+  - merges both into one response, e.g. "this appears to match part X, and the internal catalog/manual describes it as Y on page Z"
+
 ## Run
 
 ### Recommended

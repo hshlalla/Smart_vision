@@ -24,6 +24,7 @@ async def index_pdf(
     model_id: str = Form("", description="Optional model_id metadata"),
     part_number: str = Form("", description="Optional part_number metadata"),
     maker: str = Form("", description="Optional maker metadata"),
+    use_paddle_ocr: bool = Form(False, description="Use PaddleOCR-VL page OCR/markdown extraction"),
 ) -> CatalogIndexResponse:
     try:
         result = catalog_service.index_pdf(
@@ -32,6 +33,7 @@ async def index_pdf(
             model_id=model_id,
             part_number=part_number,
             maker=maker,
+            use_paddle_ocr=use_paddle_ocr,
         )
         return CatalogIndexResponse(**result)
     except Exception as exc:
@@ -53,4 +55,3 @@ async def search_catalog(
         return CatalogSearchResponse(results=results)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-

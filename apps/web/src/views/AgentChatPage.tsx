@@ -19,6 +19,7 @@ import { useMediaQuery } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { IconPhoto, IconSend, IconTrash } from "@tabler/icons-react";
 
+import MarkdownBlocks from "../components/MarkdownBlocks";
 import { useAuth } from "../state/auth";
 import { apiFetchJson, toBase64 } from "../utils/api";
 
@@ -261,9 +262,7 @@ export default function AgentChatPage() {
                       ) : null}
                     </Stack>
                   ) : null}
-                  <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-                    {m.content}
-                  </Text>
+                  <MarkdownBlocks content={m.content} />
                 </Card>
               </Group>
             ))}

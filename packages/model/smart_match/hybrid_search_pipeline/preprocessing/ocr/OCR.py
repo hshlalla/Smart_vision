@@ -10,9 +10,9 @@ PaddleOCR-VL 모델을 사용하려면 사전에 해당 weight를 다운로드 �
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import logging
 from importlib import import_module
@@ -54,6 +54,11 @@ class OCRExecutionResult:
     combined_text: str
     markdown_text: Optional[str] = None
     markdown_images: Optional[List[Tuple[str, Image.Image]]] = None
+    structured_text: Optional[str] = None
+    spotting_text: str = ""
+    table_htmls: Dict[str, str] = field(default_factory=dict)
+    block_labels: List[str] = field(default_factory=list)
+    block_contents: List[str] = field(default_factory=list)
 
 
 class PaddleOCRVLPipeline:
@@ -70,9 +75,22 @@ class PaddleOCRVLPipeline:
         self._use_vl = False
         self._pipeline = None
 
+        pipeline_defaults = {
+            "use_doc_orientation_classify": True,
+            "use_doc_unwarping": True,
+            "use_layout_detection": True,
+            "use_chart_recognition": True,
+            "use_seal_recognition": True,
+            "use_ocr_for_image_block": True,
+            "format_block_content": True,
+            "merge_layout_blocks": True,
+        }
+        for key, value in pipeline_defaults.items():
+            self._pipeline_kwargs.setdefault(key, value)
+
         if PaddleOCRVL is not None and _supports_paddleocr_vl():
             try:
-                self._pipeline = PaddleOCRVL(**pipeline_kwargs)
+                self._pipeline = PaddleOCRVL(**self._pipeline_kwargs)
                 self._use_vl = True
             except Exception:  # pragma: no cover - runtime fallback
                 logger.exception(
@@ -134,56 +152,154 @@ class PaddleOCRVLPipeline:
     def _extract_from_vl(self, ocr_outputs) -> OCRExecutionResult:
         filtered_tokens: List[OCRToken] = []
         combined_text_parts: List[str] = []
-        markdown_pages = []
+        markdown_parts: List[str] = []
         markdown_images: List[Tuple[str, Image.Image]] = []
+        structured_parts: List[str] = []
+        spotting_parts: List[str] = []
+        table_htmls: Dict[str, str] = {}
+        block_labels: List[str] = []
+        block_contents: List[str] = []
 
         for doc in ocr_outputs:
             doc_dict = self._to_dict(doc)
-            markdown = doc_dict.get("markdown")
-            if markdown:
-                markdown_pages.append(markdown)
-                for path, image_obj in markdown.get("markdown_images", {}).items():
+            for token in self._extract_tokens_from_vl_dict(doc_dict):
+                filtered_tokens.append(token)
+                combined_text_parts.append(token.text)
+
+            markdown_payload = self._extract_markdown_payload(doc)
+            if markdown_payload:
+                markdown_text = str(markdown_payload.get("markdown_texts") or "").strip()
+                if markdown_text:
+                    markdown_parts.append(markdown_text)
+                for path, image_obj in (markdown_payload.get("markdown_images") or {}).items():
                     markdown_images.append((path, image_obj))
 
-            for page in doc_dict.get("pages", []):
-                for line in page.get("lines", []):
-                    text = line.get("text", "")
-                    score = float(line.get("score", 1.0))
-                    if not text or score < self._score_threshold:
-                        continue
-                    box = line.get("bbox") or line.get("box") or line.get("polygon") or []
-                    box = [list(map(float, pt)) for pt in box]
-                    filtered_tokens.append(OCRToken(text=text, score=score, box=box))
-                    combined_text_parts.append(text)
+            json_payload = self._extract_json_payload(doc)
+            if json_payload:
+                parsed = self._extract_structured_blocks(json_payload)
+                if parsed["text"]:
+                    structured_parts.append(parsed["text"])
+                if parsed["spotting_text"]:
+                    spotting_parts.append(parsed["spotting_text"])
+                block_labels.extend(parsed["labels"])
+                block_contents.extend(parsed["contents"])
 
-        markdown_text = None
-        if markdown_pages:
-            markdown_text = self._concatenate_markdown_pages(markdown_pages)
+            html_payload = self._extract_html_payload(doc)
+            if html_payload:
+                table_htmls.update(
+                    {
+                        str(key): str(value)
+                        for key, value in html_payload.items()
+                        if str(value or "").strip()
+                    }
+                )
 
-        combined_text = " ".join(combined_text_parts).strip()
+        markdown_text = "\n\n".join(part for part in markdown_parts if part).strip() or None
+        structured_text = "\n\n".join(part for part in structured_parts if part).strip() or None
+        spotting_text = " ".join(part for part in spotting_parts if part).strip()
+        combined_text = " ".join(part for part in combined_text_parts if part).strip()
+        if not combined_text and block_contents:
+            combined_text = " ".join(block_contents).strip()
         return OCRExecutionResult(
             tokens=filtered_tokens,
             combined_text=combined_text,
             markdown_text=markdown_text,
             markdown_images=markdown_images or None,
+            structured_text=structured_text,
+            spotting_text=spotting_text,
+            table_htmls=table_htmls,
+            block_labels=block_labels,
+            block_contents=block_contents,
         )
 
-    def _concatenate_markdown_pages(self, markdown_pages: List[dict]) -> Optional[str]:
-        """Safely concatenate markdown pages when PaddleOCR-VL exposes the helper."""
-        if hasattr(self._pipeline, "concatenate_markdown_pages"):
-            try:
-                return self._pipeline.concatenate_markdown_pages(markdown_pages)
-            except Exception:  # pragma: no cover - optional path
-                return None
+    def _extract_tokens_from_vl_dict(self, doc_dict: dict) -> List[OCRToken]:
+        tokens: List[OCRToken] = []
+        pages = doc_dict.get("pages", [])
+        for page in pages:
+            for line in page.get("lines", []):
+                text = str(line.get("text", "")).strip()
+                score = float(line.get("score", 1.0))
+                if not text or score < self._score_threshold:
+                    continue
+                box = line.get("bbox") or line.get("box") or line.get("polygon") or []
+                box = [list(map(float, pt)) for pt in box]
+                tokens.append(OCRToken(text=text, score=score, box=box))
+        return tokens
 
-        parts = []
-        for page in markdown_pages:
-            text = page.get("markdown_text")
-            if text:
-                parts.append(text)
-        if parts:
-            return "\n\n".join(parts)
+    @staticmethod
+    def _extract_markdown_payload(doc: Any) -> Optional[dict]:
+        markdown = None
+        if hasattr(doc, "_to_markdown"):
+            try:
+                markdown = doc._to_markdown(pretty=False)
+            except Exception:
+                logger.debug("Failed to call PaddleOCR-VL _to_markdown(pretty=False).", exc_info=True)
+        if not markdown and hasattr(doc, "markdown"):
+            try:
+                markdown = doc.markdown
+            except Exception:
+                logger.debug("Failed to access PaddleOCR-VL markdown property.", exc_info=True)
+        if isinstance(markdown, dict):
+            return markdown
         return None
+
+    @staticmethod
+    def _extract_json_payload(doc: Any) -> Optional[dict]:
+        if hasattr(doc, "json"):
+            try:
+                payload = doc.json
+                if isinstance(payload, dict):
+                    return payload.get("res") if isinstance(payload.get("res"), dict) else payload
+            except Exception:
+                logger.debug("Failed to access PaddleOCR-VL json payload.", exc_info=True)
+        return None
+
+    @staticmethod
+    def _extract_html_payload(doc: Any) -> Dict[str, str]:
+        if hasattr(doc, "html"):
+            try:
+                payload = doc.html
+                if isinstance(payload, dict):
+                    return {
+                        str(key): str(value)
+                        for key, value in payload.items()
+                        if str(value or "").strip()
+                    }
+            except Exception:
+                logger.debug("Failed to access PaddleOCR-VL html payload.", exc_info=True)
+        return {}
+
+    @staticmethod
+    def _extract_structured_blocks(json_payload: dict) -> Dict[str, Any]:
+        parsing_res_list = json_payload.get("parsing_res_list") or []
+        spotting_res = json_payload.get("spotting_res") or {}
+        labels: List[str] = []
+        contents: List[str] = []
+        text_parts: List[str] = []
+        for block in parsing_res_list:
+            if not isinstance(block, dict):
+                continue
+            label = str(block.get("block_label") or "").strip()
+            content = str(block.get("block_content") or "").strip()
+            if label:
+                labels.append(label)
+            if content:
+                contents.append(content)
+                text_parts.append(content)
+
+        spotting_text = ""
+        if isinstance(spotting_res, dict):
+            rec_texts = spotting_res.get("rec_texts") or []
+            spotting_text = " ".join(str(text).strip() for text in rec_texts if str(text).strip()).strip()
+            if spotting_text:
+                text_parts.append(spotting_text)
+
+        return {
+            "labels": labels,
+            "contents": contents,
+            "text": "\n\n".join(part for part in text_parts if part).strip(),
+            "spotting_text": spotting_text,
+        }
 
     def _extract_from_std(self, ocr_outputs) -> OCRExecutionResult:
         filtered_tokens: List[OCRToken] = []
