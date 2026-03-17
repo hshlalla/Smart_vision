@@ -19,6 +19,7 @@ import { notifications } from "@mantine/notifications";
 import { IconPhoto, IconSearch, IconSparkles, IconUpload } from "@tabler/icons-react";
 
 import { useAuth } from "../state/auth";
+import { useI18n } from "../state/i18n";
 import { apiFetchJson, toBase64 } from "../utils/api";
 
 type SearchResult = Record<string, any>;
@@ -75,6 +76,7 @@ function resolveMediaUrl(imagePath: string | null | undefined): string | null {
 
 export default function SearchPage() {
   const auth = useAuth();
+  const { t, statusLabel } = useI18n();
   const [queryText, setQueryText] = useState("");
   const [partNumber, setPartNumber] = useState("");
   const [topK, setTopK] = useState<number>(10);
@@ -93,7 +95,7 @@ export default function SearchPage() {
 
   async function runSearch() {
     if (!hasQuery) {
-      notifications.show({ color: "yellow", title: "입력 필요", message: "텍스트 또는 이미지를 넣어주세요." });
+      notifications.show({ color: "yellow", title: t("search.inputNeededTitle"), message: t("search.inputNeededMessage") });
       return;
     }
     const selected = file;
@@ -136,11 +138,15 @@ export default function SearchPage() {
         hasImage: Boolean(selected),
         resultCount: res.results?.length || 0,
       });
-      notifications.show({ color: "teal", title: "검색 완료", message: `결과 ${res.results?.length || 0}건` });
+      notifications.show({
+        color: "teal",
+        title: t("search.completedTitle"),
+        message: t("search.completedMessage", { count: res.results?.length || 0 }),
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[HybridSearch] request failed", { hasImage: Boolean(selected), error: msg });
-      notifications.show({ color: "red", title: "검색 실패", message: msg });
+      notifications.show({ color: "red", title: t("search.failedTitle"), message: msg });
     } finally {
       setLoading(false);
       setEncodingPercent(null);
@@ -153,7 +159,7 @@ export default function SearchPage() {
 
   async function encodeSelectedFile(): Promise<string> {
     if (!file) {
-      throw new Error("이미지를 선택하세요.");
+      throw new Error(t("search.imageNeededSaveMessage"));
     }
     return toBase64(file, {
       maxBytes: 5 * 1024 * 1024,
@@ -165,7 +171,7 @@ export default function SearchPage() {
 
   async function runWritebackPreview() {
     if (!file) {
-      notifications.show({ color: "yellow", title: "이미지 필요", message: "등록 초안을 만들 이미지를 선택하세요." });
+      notifications.show({ color: "yellow", title: t("search.imageNeededTitle"), message: t("search.imageNeededDraftMessage") });
       return;
     }
     setPreviewLoading(true);
@@ -189,11 +195,15 @@ export default function SearchPage() {
         source: res.draft.source || "openai",
       });
       setOcrImageIndices(Array.isArray(res.ocr_image_indices) ? res.ocr_image_indices : []);
-      notifications.show({ color: "teal", title: "등록 초안 생성 완료", message: "수정 후 저장할 수 있습니다." });
+      notifications.show({
+        color: "teal",
+        title: t("search.draftCompletedTitle"),
+        message: t("search.draftCompletedMessage"),
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setOcrImageIndices([]);
-      notifications.show({ color: "red", title: "등록 초안 생성 실패", message: msg });
+      notifications.show({ color: "red", title: t("search.draftFailedTitle"), message: msg });
     } finally {
       setPreviewLoading(false);
       setEncodingPercent(null);
@@ -202,7 +212,7 @@ export default function SearchPage() {
 
   async function confirmWriteback() {
     if (!file) {
-      notifications.show({ color: "yellow", title: "이미지 필요", message: "저장할 이미지를 선택하세요." });
+      notifications.show({ color: "yellow", title: t("search.imageNeededTitle"), message: t("search.imageNeededSaveMessage") });
       return;
     }
     setConfirmLoading(true);
@@ -227,8 +237,10 @@ export default function SearchPage() {
       );
       notifications.show({
         color: "blue",
-        title: "저장 시작",
-        message: res.model_id ? `백그라운드 작업으로 전환됨 (${res.model_id})` : "백그라운드 작업으로 전환됨",
+        title: t("search.saveStartedTitle"),
+        message: res.model_id
+          ? t("search.saveStartedWithModel", { modelId: res.model_id })
+          : t("search.saveStartedWithoutModel"),
       });
       if (res.model_id) {
         setDraft((prev) => ({ ...prev, model_id: res.model_id || prev.model_id }));
@@ -238,7 +250,7 @@ export default function SearchPage() {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      notifications.show({ color: "red", title: "저장 실패", message: msg });
+      notifications.show({ color: "red", title: t("search.saveFailedTitle"), message: msg });
     } finally {
       setConfirmLoading(false);
       setEncodingPercent(null);
@@ -267,13 +279,17 @@ export default function SearchPage() {
         if (res.status === "completed") {
           notifications.show({
             color: "teal",
-            title: "저장 완료",
+            title: t("search.saveCompletedTitle"),
             message: res.model_id ? `${res.detail} (${res.model_id})` : res.detail,
           });
           return;
         }
         if (res.status === "failed") {
-          notifications.show({ color: "red", title: "저장 실패", message: res.detail || "백그라운드 작업이 실패했습니다." });
+          notifications.show({
+            color: "red",
+            title: t("search.saveFailedTitle"),
+            message: res.detail || t("search.saveFailedFallback"),
+          });
           return;
         }
         timer = window.setTimeout(poll, 2500);
@@ -284,7 +300,7 @@ export default function SearchPage() {
           prev
             ? {
                 ...prev,
-                detail: `상태 조회 재시도 중: ${msg}`,
+                detail: t("search.retryingStatus", { message: msg }),
               }
             : prev,
         );
@@ -304,24 +320,24 @@ export default function SearchPage() {
   return (
     <Stack gap="md">
       <Group justify="space-between" align="baseline">
-        <Title order={3}>Hybrid Search</Title>
-        <Badge variant="light">image + OCR + caption + metadata</Badge>
+        <Title order={3}>{t("search.title")}</Title>
+        <Badge variant="light">{t("search.badge")}</Badge>
       </Group>
 
       <Card withBorder radius="lg" p="lg">
         <Grid gutter="md">
           <Grid.Col span={{ base: 12, md: 7 }}>
             <TextInput
-              label="텍스트 쿼리"
-              placeholder="예: 520d 헤드램프, PN-1234, maker..."
+              label={t("search.queryLabel")}
+              placeholder={t("search.queryPlaceholder")}
               value={queryText}
               onChange={(e) => setQueryText(e.currentTarget.value)}
             />
           </Grid.Col>
           <Grid.Col span={{ base: 12, md: 5 }}>
             <TextInput
-              label="Part number 필터(옵션)"
-              placeholder="예: PN-0000"
+              label={t("search.partFilterLabel")}
+              placeholder={t("search.partFilterPlaceholder")}
               value={partNumber}
               onChange={(e) => setPartNumber(e.currentTarget.value)}
             />
@@ -329,8 +345,8 @@ export default function SearchPage() {
 
           <Grid.Col span={{ base: 12, md: 7 }}>
             <FileInput
-              label="이미지(옵션)"
-              placeholder="사진을 선택하세요"
+              label={t("search.imageLabel")}
+              placeholder={t("search.imagePlaceholder")}
               leftSection={<IconPhoto size={16} />}
               value={file}
               onChange={setFile}
@@ -340,7 +356,7 @@ export default function SearchPage() {
           </Grid.Col>
           <Grid.Col span={{ base: 12, md: 5 }}>
             <NumberInput
-              label="Top-K"
+              label={t("search.topKLabel")}
               value={topK}
               onChange={(v) => setTopK(typeof v === "number" ? v : 10)}
               min={1}
@@ -351,12 +367,12 @@ export default function SearchPage() {
           <Grid.Col span={12}>
             <Group justify="space-between" align="center">
               <Switch
-                label="Reranker 사용"
+                label={t("search.rerankerLabel")}
                 checked={useReranker}
                 onChange={(event) => setUseReranker(event.currentTarget.checked)}
               />
               <Text size="xs" c="dimmed">
-                이미지 검색에서만 의미가 있고, 속도는 느려질 수 있습니다.
+                {t("search.rerankerDescription")}
               </Text>
             </Group>
           </Grid.Col>
@@ -364,12 +380,12 @@ export default function SearchPage() {
           <Grid.Col span={12}>
             <Group justify="flex-end">
               <Button leftSection={<IconSearch size={16} />} loading={loading} onClick={runSearch}>
-                검색
+                {t("search.searchButton")}
               </Button>
             </Group>
             {encodingPercent !== null ? (
               <Text size="xs" c="dimmed" mt={6}>
-                이미지 인코딩 중... {encodingPercent}%
+                {t("search.encodingProgress", { percent: encodingPercent })}
               </Text>
             ) : null}
           </Grid.Col>
@@ -380,11 +396,11 @@ export default function SearchPage() {
         {results.length === 0 ? (
           <Card withBorder radius="lg" p="lg">
             <Stack gap="sm">
-              <Text c="dimmed">검색 결과가 여기에 표시됩니다.</Text>
+              <Text c="dimmed">{t("search.noResults")}</Text>
               {file ? (
                 <>
                   <Group justify="space-between">
-                    <Text fw={600}>검색 실패 시 신규 자산으로 등록</Text>
+                    <Text fw={600}>{t("search.writebackTitle")}</Text>
                     <Button
                       size="sm"
                       variant="light"
@@ -392,50 +408,50 @@ export default function SearchPage() {
                       loading={previewLoading}
                       onClick={runWritebackPreview}
                     >
-                      등록 초안 생성
+                      {t("search.createDraftButton")}
                     </Button>
                   </Group>
                   {(draft.description || draft.maker || draft.part_number || draft.category || draft.product_info) ? (
                     <Grid gutter="md">
                       <Grid.Col span={{ base: 12, md: 6 }}>
                         <TextInput
-                          label="Model ID"
-                          placeholder="비우면 자동 할당"
+                          label={t("search.modelIdLabel")}
+                          placeholder={t("search.modelIdPlaceholder")}
                           value={draft.model_id}
                           onChange={(e) => setDraftField("model_id", e.currentTarget.value)}
                         />
                       </Grid.Col>
                       <Grid.Col span={{ base: 12, md: 6 }}>
                         <TextInput
-                          label="Maker"
+                          label={t("search.makerLabel")}
                           value={draft.maker}
                           onChange={(e) => setDraftField("maker", e.currentTarget.value)}
                         />
                       </Grid.Col>
                       <Grid.Col span={{ base: 12, md: 6 }}>
                         <TextInput
-                          label="Part number"
+                          label={t("search.partNumberLabel")}
                           value={draft.part_number}
                           onChange={(e) => setDraftField("part_number", e.currentTarget.value)}
                         />
                       </Grid.Col>
                       <Grid.Col span={{ base: 12, md: 6 }}>
                         <TextInput
-                          label="Category"
+                          label={t("search.categoryLabel")}
                           value={draft.category}
                           onChange={(e) => setDraftField("category", e.currentTarget.value)}
                         />
                       </Grid.Col>
                       <Grid.Col span={{ base: 12, md: 6 }}>
                         <TextInput
-                          label="Product info"
+                          label={t("search.productInfoLabel")}
                           value={draft.product_info}
                           onChange={(e) => setDraftField("product_info", e.currentTarget.value)}
                         />
                       </Grid.Col>
                       <Grid.Col span={{ base: 12, md: 6 }}>
                         <NumberInput
-                          label="Price value"
+                          label={t("search.priceValueLabel")}
                           value={draft.price_value ?? undefined}
                           onChange={(v) => setDraftField("price_value", typeof v === "number" ? v : null)}
                           min={0}
@@ -444,7 +460,7 @@ export default function SearchPage() {
                       </Grid.Col>
                       <Grid.Col span={12}>
                         <Textarea
-                          label="Description"
+                          label={t("search.descriptionLabel")}
                           minRows={3}
                           value={draft.description}
                           onChange={(e) => setDraftField("description", e.currentTarget.value)}
@@ -454,7 +470,7 @@ export default function SearchPage() {
                         <Group justify="space-between">
                           <Group gap="xs">
                             {draft.source ? <Badge variant="light">{draft.source}</Badge> : null}
-                            {taskStatus ? <Badge variant="light">job: {taskStatus.status}</Badge> : null}
+                            {taskStatus ? <Badge variant="light">{t("search.jobBadge", { status: statusLabel(taskStatus.status) })}</Badge> : null}
                           </Group>
                           <Button
                             size="sm"
@@ -462,7 +478,7 @@ export default function SearchPage() {
                             loading={confirmLoading}
                             onClick={confirmWriteback}
                           >
-                            확인 후 저장
+                            {t("search.saveButton")}
                           </Button>
                         </Group>
                         {taskStatus?.detail ? (
@@ -492,7 +508,7 @@ export default function SearchPage() {
                             <Stack h="100%" justify="center" align="center" gap={4}>
                               <IconPhoto size={24} />
                               <Text size="xs" c="dimmed">
-                                이미지 없음
+                                {t("search.imageEmpty")}
                               </Text>
                             </Stack>
                           </Card>
@@ -513,29 +529,29 @@ export default function SearchPage() {
                 <Grid.Col span={{ base: 12, sm: 8 }}>
                   <Group justify="space-between" align="flex-start">
                     <Stack gap={2}>
-                      <Text fw={700}>{String(r.model_id || "unknown")}</Text>
-                      <Text size="sm" c="dimmed">
-                        {String(r.description || "")}
-                      </Text>
+                      <Text fw={700}>{String(r.model_id || t("search.unknownModel"))}</Text>
+                      <Text size="sm" c="dimmed">{String(r.description || "")}</Text>
                     </Stack>
                     <Badge variant="light">
-                      score {typeof r.score === "number" ? r.score.toFixed(3) : String(r.score ?? "-")}
+                      {t("search.scoreBadge", {
+                        score: typeof r.score === "number" ? r.score.toFixed(3) : String(r.score ?? "-"),
+                      })}
                     </Badge>
                   </Group>
                   <Group gap="xs" mt="sm">
-                    {r.maker ? <Badge variant="outline">maker: {String(r.maker)}</Badge> : null}
-                    {r.part_number ? <Badge variant="outline">pn: {String(r.part_number)}</Badge> : null}
-                    {r.category ? <Badge variant="outline">cat: {String(r.category)}</Badge> : null}
-                    {r.lexical_hit ? <Badge color="grape" variant="light">lexical</Badge> : null}
+                    {r.maker ? <Badge variant="outline">{t("search.makerBadge", { value: String(r.maker) })}</Badge> : null}
+                    {r.part_number ? <Badge variant="outline">{t("search.pnBadge", { value: String(r.part_number) })}</Badge> : null}
+                    {r.category ? <Badge variant="outline">{t("search.categoryBadge", { value: String(r.category) })}</Badge> : null}
+                    {r.lexical_hit ? <Badge color="grape" variant="light">{t("search.lexicalBadge")}</Badge> : null}
                   </Group>
                   {r.ocr_text ? (
                     <Text size="sm" c="dimmed" mt="sm" lineClamp={3}>
-                      OCR: {String(r.ocr_text)}
+                      {t("search.ocrPrefix", { value: String(r.ocr_text) })}
                     </Text>
                   ) : null}
                   {r.caption_text ? (
                     <Text size="sm" c="dimmed" mt={6} lineClamp={2}>
-                      Caption: {String(r.caption_text)}
+                      {t("search.captionPrefix", { value: String(r.caption_text) })}
                     </Text>
                   ) : null}
                 </Grid.Col>

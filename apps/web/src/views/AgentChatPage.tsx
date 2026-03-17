@@ -21,6 +21,7 @@ import { IconPhoto, IconSend, IconTrash } from "@tabler/icons-react";
 
 import MarkdownBlocks from "../components/MarkdownBlocks";
 import { useAuth } from "../state/auth";
+import { useI18n } from "../state/i18n";
 import { apiFetchJson, toBase64 } from "../utils/api";
 
 type ChatMsg = {
@@ -56,13 +57,13 @@ function resolveMediaUrl(imagePath: string | null | undefined): string | null {
 
 export default function AgentChatPage() {
   const auth = useAuth();
+  const { language, t } = useI18n();
   const isMobile = useMediaQuery("(max-width: 48em)");
   const messagePreviewUrlsRef = useRef<string[]>([]);
   const [messages, setMessages] = useState<ChatMsg[]>([
     {
       role: "assistant",
-      content:
-        "이미지를 올리고 “이 제품 뭐야?”처럼 물어보면, 검색 결과 기반으로 설명하고 필요하면 gparts 가격 후보도 찾아줄게.",
+      content: t("agent.intro"),
     },
   ]);
   const [input, setInput] = useState("");
@@ -94,9 +95,16 @@ export default function AgentChatPage() {
     [],
   );
 
+  useEffect(() => {
+    setMessages((prev) => {
+      if (prev.length !== 1 || prev[0]?.role !== "assistant") return prev;
+      return [{ ...prev[0], content: t("agent.intro") }];
+    });
+  }, [language, t]);
+
   async function send() {
     if (!canSend) return;
-    const text = input.trim() || "이 제품 뭐야?";
+    const text = input.trim() || t("agent.defaultPrompt");
     const selected = imageFile;
     const userMessage: ChatMsg = { role: "user", content: text };
 
@@ -177,11 +185,11 @@ export default function AgentChatPage() {
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      notifications.show({ color: "red", title: "에이전트 오류", message: msg });
+      notifications.show({ color: "red", title: t("agent.errorTitle"), message: msg });
       console.error("[AgentChat] request failed", { hasImage: Boolean(selected), error: msg });
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: `오류가 발생했어: ${msg}` },
+        { role: "assistant", content: t("agent.errorPrefix", { message: msg }) },
       ]);
     } finally {
       setLoading(false);
@@ -199,8 +207,8 @@ export default function AgentChatPage() {
       }}
     >
       <Group justify="space-between" align="baseline">
-        <Title order={3}>Agent Bot</Title>
-        <Badge variant="light">LangChain tool agent</Badge>
+        <Title order={3}>{t("agent.title")}</Title>
+        <Badge variant="light">{t("agent.badge")}</Badge>
       </Group>
 
       <Card withBorder radius="lg" p="md" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
@@ -223,7 +231,7 @@ export default function AgentChatPage() {
                     <Stack gap={6} mb={m.content ? "xs" : 0}>
                       <Image
                         src={m.imagePreviewUrl}
-                        alt={m.imageName || "uploaded image"}
+                        alt={m.imageName || t("agent.uploadedImageAlt")}
                         radius="md"
                         h={160}
                         w={220}
@@ -240,7 +248,7 @@ export default function AgentChatPage() {
                     <Stack gap={6} mb={m.content ? "xs" : 0}>
                       <Image
                         src={m.resultImageUrl}
-                        alt={m.resultTitle || "matched product"}
+                        alt={m.resultTitle || t("agent.matchedProductAlt")}
                         radius="md"
                         h={160}
                         w={220}
@@ -279,12 +287,17 @@ export default function AgentChatPage() {
                     variant={imageFile ? "light" : "subtle"}
                     leftSection={<IconPhoto size={16} />}
                   >
-                    {imageFile ? "이미지 선택됨" : "이미지"}
+                    {imageFile ? t("agent.imageSelected") : t("agent.selectImage")}
                   </Button>
                 )}
               </FileButton>
               {imageFile ? (
-                <ActionIcon variant="subtle" color="red" onClick={() => setImageFile(null)} aria-label="remove image">
+                <ActionIcon
+                  variant="subtle"
+                  color="red"
+                  onClick={() => setImageFile(null)}
+                  aria-label={t("agent.removeImage")}
+                >
                   <IconTrash size={16} />
                 </ActionIcon>
               ) : null}
@@ -296,7 +309,7 @@ export default function AgentChatPage() {
               onClick={send}
               fullWidth={isMobile}
             >
-              보내기
+              {t("agent.send")}
             </Button>
           </Group>
 
@@ -319,7 +332,7 @@ export default function AgentChatPage() {
                     {formatFileSize(imageFile.size)}
                   </Text>
                   <Text size="xs" c="dimmed">
-                    전송하면 사용자 메시지에 썸네일로 함께 표시됩니다.
+                    {t("agent.thumbnailHint")}
                   </Text>
                 </Stack>
               </Group>
@@ -331,7 +344,7 @@ export default function AgentChatPage() {
             maxRows={6}
             value={input}
             onChange={(e) => setInput(e.currentTarget.value)}
-            placeholder='예: "이 제품 뭐야? 모델/제조사 추정해줘. 가격도 알려줘"'
+            placeholder={t("agent.inputPlaceholder")}
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault();
@@ -340,17 +353,17 @@ export default function AgentChatPage() {
             }}
           />
           <Text size="xs" c="dimmed">
-            Enter: 줄바꿈 · Ctrl/⌘+Enter: 전송
+            {t("agent.keyboardHint")}
           </Text>
           <Switch
             checked={updateMilvus}
             onChange={(e) => setUpdateMilvus(e.currentTarget.checked)}
-            label="승인 후에만 써야 하므로 Milvus 업데이트는 기본적으로 꺼둡니다"
-            description="켜면 agent가 새 model_id 할당 및 메타데이터 upsert를 시도할 수 있습니다."
+            label={t("agent.updateMilvusLabel")}
+            description={t("agent.updateMilvusDescription")}
           />
           {encodingPercent !== null ? (
             <Text size="xs" c="dimmed">
-              이미지 인코딩 중... {encodingPercent}%
+              {t("agent.encodingProgress", { percent: encodingPercent })}
             </Text>
           ) : null}
         </Stack>

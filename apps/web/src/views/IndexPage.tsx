@@ -20,6 +20,7 @@ import { notifications } from "@mantine/notifications";
 import { IconScan, IconSparkles, IconUpload } from "@tabler/icons-react";
 
 import { useAuth } from "../state/auth";
+import { useI18n } from "../state/i18n";
 import { apiFetchJson, toBase64 } from "../utils/api";
 
 type MetadataDraft = {
@@ -67,6 +68,7 @@ function cloneEmptyDraft(): MetadataDraft {
 
 export default function IndexPage() {
   const auth = useAuth();
+  const { t, statusLabel } = useI18n();
   const [files, setFiles] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [draft, setDraft] = useState<MetadataDraft>(cloneEmptyDraft);
@@ -108,7 +110,7 @@ export default function IndexPage() {
 
   async function encodeSelectedFiles(): Promise<string[]> {
     if (!files.length) {
-      throw new Error("이미지를 선택하세요.");
+      throw new Error(t("index.confirmImageNeededMessage"));
     }
     const selected = files.slice(0, 4);
     const encoded: string[] = [];
@@ -142,7 +144,7 @@ export default function IndexPage() {
 
   async function runPreview() {
     if (!files.length) {
-      notifications.show({ color: "yellow", title: "이미지 필요", message: "메타를 생성할 이미지를 선택하세요." });
+      notifications.show({ color: "yellow", title: t("index.imageNeededTitle"), message: t("index.previewImageNeededMessage") });
       return;
     }
     setPreviewLoading(true);
@@ -168,12 +170,16 @@ export default function IndexPage() {
       });
       setOcrImageIndices(Array.isArray(res.ocr_image_indices) ? res.ocr_image_indices : []);
       setLabelOcrText(res.label_ocr_text || "");
-      notifications.show({ color: "teal", title: "초안 생성 완료", message: "생성된 메타데이터를 검토해 주세요." });
+      notifications.show({
+        color: "teal",
+        title: t("index.previewCompletedTitle"),
+        message: t("index.previewCompletedMessage"),
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setOcrImageIndices([]);
       setLabelOcrText("");
-      notifications.show({ color: "red", title: "초안 생성 실패", message: msg });
+      notifications.show({ color: "red", title: t("index.previewFailedTitle"), message: msg });
     } finally {
       setPreviewLoading(false);
       setEncodingPercent(null);
@@ -182,7 +188,7 @@ export default function IndexPage() {
 
   async function onConfirmIndex() {
     if (!files.length) {
-      notifications.show({ color: "yellow", title: "이미지 필요", message: "인덱싱할 이미지를 선택하세요." });
+      notifications.show({ color: "yellow", title: t("index.imageNeededTitle"), message: t("index.confirmImageNeededMessage") });
       return;
     }
     setConfirmLoading(true);
@@ -212,8 +218,10 @@ export default function IndexPage() {
       );
       notifications.show({
         color: "blue",
-        title: "인덱싱 시작",
-        message: res.model_id ? `백그라운드 작업으로 전환됨 (${res.model_id})` : "백그라운드 작업으로 전환됨",
+        title: t("index.indexingStartedTitle"),
+        message: res.model_id
+          ? t("index.indexingStartedWithModel", { modelId: res.model_id })
+          : t("index.indexingStartedWithoutModel"),
       });
       if (res.task_id) {
         setFiles([]);
@@ -224,7 +232,7 @@ export default function IndexPage() {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      notifications.show({ color: "red", title: "인덱싱 실패", message: msg });
+      notifications.show({ color: "red", title: t("index.indexingFailedTitle"), message: msg });
     } finally {
       setConfirmLoading(false);
       setEncodingPercent(null);
@@ -250,13 +258,17 @@ export default function IndexPage() {
         if (res.status === "completed") {
           notifications.show({
             color: "teal",
-            title: "인덱싱 완료",
+            title: t("index.indexingCompletedTitle"),
             message: res.model_id ? `${res.detail} (${res.model_id})` : res.detail,
           });
           return;
         }
         if (res.status === "failed") {
-          notifications.show({ color: "red", title: "인덱싱 실패", message: res.detail || "백그라운드 작업이 실패했습니다." });
+          notifications.show({
+            color: "red",
+            title: t("index.indexingFailedTitle"),
+            message: res.detail || t("index.indexingFailedFallback"),
+          });
           return;
         }
         timer = window.setTimeout(poll, 2500);
@@ -267,7 +279,7 @@ export default function IndexPage() {
           prev
             ? {
                 ...prev,
-                detail: `상태 조회 재시도 중: ${msg}`,
+                detail: t("index.retryingStatus", { message: msg }),
               }
             : prev,
         );
@@ -286,14 +298,14 @@ export default function IndexPage() {
 
   return (
     <Stack gap="md">
-      <Modal opened={labelModalOpen} onClose={() => setLabelModalOpen(false)} title="Label OCR" centered>
+      <Modal opened={labelModalOpen} onClose={() => setLabelModalOpen(false)} title={t("index.labelModalTitle")} centered>
         <Stack gap="md">
           <Text size="sm" c="dimmed">
-            라벨 또는 명판만 가까이 찍은 이미지를 올리면, OCR 텍스트를 메타 생성의 보조 입력으로 사용합니다.
+            {t("index.labelModalDescription")}
           </Text>
           <FileInput
-            label="라벨 이미지"
-            placeholder="라벨 이미지를 선택하세요"
+            label={t("index.labelImagesLabel")}
+            placeholder={t("index.labelImagesPlaceholder")}
             value={labelFiles}
             onChange={(value) => setLabelFiles(Array.isArray(value) ? value : value ? [value] : [])}
             accept="image/*"
@@ -308,18 +320,18 @@ export default function IndexPage() {
           ) : null}
           <Group justify="space-between">
             <Text size="sm" c="dimmed">
-              {labelFiles.length ? `${labelFiles.length}장 선택됨` : "선택된 라벨 이미지 없음"}
+              {labelFiles.length ? t("index.labelSelected", { count: labelFiles.length }) : t("index.labelNone")}
             </Text>
             <Button variant="light" onClick={() => setLabelModalOpen(false)}>
-              완료
+              {t("index.labelDone")}
             </Button>
           </Group>
         </Stack>
       </Modal>
       <Group justify="space-between" align="baseline">
-        <Title order={3}>Index Asset</Title>
+        <Title order={3}>{t("index.title")}</Title>
         <Text c="dimmed" size="sm">
-          업로드 → 메타 초안 생성 → 수정 → 확인 후 임베딩/저장
+          {t("index.subtitle")}
         </Text>
       </Group>
 
@@ -327,8 +339,8 @@ export default function IndexPage() {
         <Grid gutter="md">
           <Grid.Col span={12}>
             <FileInput
-              label="Images"
-              placeholder="이미지를 선택하세요"
+              label={t("index.imagesLabel")}
+              placeholder={t("index.imagesPlaceholder")}
               value={files}
               onChange={(value) => setFiles(Array.isArray(value) ? value : value ? [value] : [])}
               accept="image/*"
@@ -346,10 +358,10 @@ export default function IndexPage() {
                   ))}
                   <Stack gap={4} style={{ minWidth: 0, flex: 1 }}>
                     <Text fw={600} lineClamp={1}>
-                      {files.length}장 선택됨
+                      {t("index.selectedImages", { count: files.length })}
                     </Text>
                     <Text size="sm" c="dimmed">
-                      메타 초안은 최대 4장을 함께 보고 생성하고, 확인 후 저장 시 선택한 이미지들을 같은 모델로 모두 인덱싱합니다.
+                      {t("index.selectedImagesHelp")}
                     </Text>
                   </Stack>
                 </Group>
@@ -361,20 +373,20 @@ export default function IndexPage() {
             <Group justify="space-between" align="end">
               <Stack gap={4}>
                 <Text fw={500} size="sm">
-                  메타 생성 모드
+                  {t("index.metadataModeLabel")}
                 </Text>
                 <SegmentedControl
                   value={metadataMode}
                   onChange={(value) => setMetadataMode(value as MetadataMode)}
                   data={[
-                    { label: "Auto", value: "auto" },
-                    { label: "GPT", value: "gpt" },
-                    { label: "Local", value: "local" },
+                    { label: t("common.auto"), value: "auto" },
+                    { label: t("common.gpt"), value: "gpt" },
+                    { label: t("common.local"), value: "local" },
                   ]}
                 />
               </Stack>
               <Button variant="light" leftSection={<IconScan size={16} />} onClick={() => setLabelModalOpen(true)}>
-                Label OCR
+                {t("index.labelOcrButton")}
               </Button>
             </Group>
           </Grid.Col>
@@ -383,72 +395,72 @@ export default function IndexPage() {
             <Group justify="space-between">
               <Group gap="xs">
                 {draft.source ? <Badge variant="light">{draft.source}</Badge> : null}
-                {taskStatus ? <Badge variant="outline">job: {taskStatus.status}</Badge> : null}
-                {labelFiles.length ? <Badge variant="outline">label {labelFiles.length}장</Badge> : null}
+                {taskStatus ? <Badge variant="outline">{t("index.jobBadge", { status: statusLabel(taskStatus.status) })}</Badge> : null}
+                {labelFiles.length ? <Badge variant="outline">{t("index.labelBadge", { count: labelFiles.length })}</Badge> : null}
               </Group>
               <Button leftSection={<IconSparkles size={16} />} loading={previewLoading} onClick={runPreview}>
-                메타 자동 추출
+                {t("index.autoExtractButton")}
               </Button>
             </Group>
             {encodingPercent !== null ? (
               <Text size="xs" c="dimmed" mt={6}>
-                이미지 인코딩 중... {encodingPercent}%
+                {t("index.encodingProgress", { percent: encodingPercent })}
               </Text>
             ) : null}
             {taskStatus ? (
               <Text size="xs" c="dimmed" mt={6}>
-                {taskStatus.detail || "백그라운드 작업 진행 중"} {taskStatus.model_id ? `(${taskStatus.model_id})` : ""}
+                {taskStatus.detail || t("index.taskInProgress")} {taskStatus.model_id ? `(${taskStatus.model_id})` : ""}
               </Text>
             ) : null}
             {labelOcrText ? (
-              <Textarea mt={6} label="Label OCR" minRows={3} value={labelOcrText} readOnly />
+              <Textarea mt={6} label={t("index.labelOcrLabel")} minRows={3} value={labelOcrText} readOnly />
             ) : null}
           </Grid.Col>
 
           <Grid.Col span={{ base: 12, md: 6 }}>
             <TextInput
-              label="Model ID"
-              placeholder="비우면 confirm 시 자동 할당"
+              label={t("index.modelIdLabel")}
+              placeholder={t("index.modelIdPlaceholder")}
               value={draft.model_id}
               onChange={(e) => setDraftField("model_id", e.currentTarget.value)}
             />
           </Grid.Col>
           <Grid.Col span={{ base: 12, md: 6 }}>
             <TextInput
-              label="Maker"
-              placeholder="예: Fuji Electric"
+              label={t("index.makerLabel")}
+              placeholder={t("index.makerPlaceholder")}
               value={draft.maker}
               onChange={(e) => setDraftField("maker", e.currentTarget.value)}
             />
           </Grid.Col>
           <Grid.Col span={{ base: 12, md: 6 }}>
             <TextInput
-              label="Part number"
-              placeholder="예: SC50BAA"
+              label={t("index.partNumberLabel")}
+              placeholder={t("index.partNumberPlaceholder")}
               value={draft.part_number}
               onChange={(e) => setDraftField("part_number", e.currentTarget.value)}
             />
           </Grid.Col>
           <Grid.Col span={{ base: 12, md: 6 }}>
             <TextInput
-              label="Category"
-              placeholder="예: magnetic_contactor"
+              label={t("index.categoryLabel")}
+              placeholder={t("index.categoryPlaceholder")}
               value={draft.category}
               onChange={(e) => setDraftField("category", e.currentTarget.value)}
             />
           </Grid.Col>
           <Grid.Col span={{ base: 12, md: 6 }}>
             <TextInput
-              label="Product info"
-              placeholder="예: magnetic contactor"
+              label={t("index.productInfoLabel")}
+              placeholder={t("index.productInfoPlaceholder")}
               value={draft.product_info}
               onChange={(e) => setDraftField("product_info", e.currentTarget.value)}
             />
           </Grid.Col>
           <Grid.Col span={{ base: 12, md: 6 }}>
             <NumberInput
-              label="Price value"
-              placeholder="예상 가격"
+              label={t("index.priceValueLabel")}
+              placeholder={t("index.priceValuePlaceholder")}
               value={draft.price_value ?? undefined}
               onChange={(v) => setDraftField("price_value", typeof v === "number" ? v : null)}
               min={0}
@@ -457,8 +469,8 @@ export default function IndexPage() {
           </Grid.Col>
           <Grid.Col span={12}>
             <Textarea
-              label="Description"
-              placeholder="검색용 설명"
+              label={t("index.descriptionLabel")}
+              placeholder={t("index.descriptionPlaceholder")}
               minRows={3}
               value={draft.description}
               onChange={(e) => setDraftField("description", e.currentTarget.value)}
@@ -468,7 +480,7 @@ export default function IndexPage() {
           <Grid.Col span={12}>
             <Group justify="flex-end">
               <Button leftSection={<IconUpload size={16} />} loading={confirmLoading} onClick={onConfirmIndex}>
-                확인 후 저장
+                {t("index.saveButton")}
               </Button>
             </Group>
           </Grid.Col>
