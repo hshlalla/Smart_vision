@@ -8,6 +8,8 @@ Smart Vision API Release Notes
 - `POST /api/v1/hybrid/index/confirm`는 즉시 `task_id`를 반환하고 실제 인덱싱은 백그라운드에서 진행합니다.
 - `GET /api/v1/hybrid/index/tasks/{task_id}`로 상태를 폴링할 수 있습니다.
 - `index/preview`에 메타 생성 모드와 label-only OCR 보조 입력을 추가했습니다.
+- `index/preview`가 기존 indexed part와의 중복 후보를 함께 반환하도록 확장했습니다.
+- Index UI에 `기존 모델에 추가 / 새 모델로 유지` 선택 UX를 추가했습니다.
 - agent chat 응답에 내부 매칭 이미지가 프런트에서 표시되도록 UI 연동을 보강했습니다.
 - Search UI에 reranker on/off 토글을 추가했습니다.
 
@@ -17,6 +19,7 @@ Smart Vision API Release Notes
 - 메타/캡션 생성은 `LOCAL_MODE`에 따라 GPT 또는 Qwen 우선 전략을 따르도록 정리했습니다.
 - `model_id` 카운터 저장소를 Milvus 컬렉션에서 SQLite로 변경했습니다.
 - 에이전트의 part number 질의는 정규화(`91200 4F310 == 91200-4F310`) 후 내부 검색을 우선 사용합니다.
+- 중복 부품 재등록 시 현장 사용성을 고려해, preview 단계에서 먼저 사용자 확인을 요청하고 confirm 시 기존 `model_id`에 append 할 수 있게 했습니다.
 
 ### Fixed
 - text-only fast path 검색 결과에 이미지가 비어 있던 문제를 수정했습니다.

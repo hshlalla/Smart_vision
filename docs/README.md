@@ -24,6 +24,17 @@
 - `apps/web/README.md`
 
 `docs/reports/*`는 제출용 작업 문서이므로 런타임 설명의 1차 기준으로 쓰지 않는다.
+중복 재등록, preview-confirm 인덱싱, merge 정책처럼 실제 동작에 직접 영향을 주는 내용도 위 README 계층을 우선 기준으로 본다.
+
+## Historical Reference Boundary
+
+아래 문서들은 여전히 참고 가치가 있지만, 현재 런타임의 최신 동작을 강제하는 source of truth는 아니다.
+
+- `docs/reports/report_working_reference.md`
+- `docs/reports/report_working_reference_ko.md`
+- 일부 `docs/planning/*`
+
+이 문서들에 과거 설계 대안이나 넓은 범위의 아이디어가 남아 있더라도, 현재 동작이 다르게 구현되어 있다면 런타임 README와 최신 release note를 우선한다.
 
 ## Report Writing Rule
 

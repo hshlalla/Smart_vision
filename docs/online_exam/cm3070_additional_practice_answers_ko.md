@@ -43,6 +43,10 @@ agent-assisted path를 실제로 만들었다는 점을 서술해야 한다. 또
 그래서 최종 시스템은 VLM signal, body-image feature, metadata, evidence-backed ranking을 함께 쓰는
 더 hybrid한 구조로 발전하게 되었다.
 
+또 다른 중요한 변화는 중복 처리 방식이었다. 실제 중고 워크플로에서는 같은 부품이 나중에 더 좋은 라벨 사진,
+더 풍부한 description, 추가 각도 이미지와 함께 다시 들어올 수 있다. 그래서 최종 구현은 duplicate-looking registration을
+단순 삭제 문제가 아니라 `review + merge` 문제로 다루게 되었다.
+
 이 차이는 video 측면에서도 그대로 나타난다.
 proposal video는 프로젝트 개념, 예상 workflow, 기대 impact를 설명하는 데 더 가깝다.
 반면 final video는 실제로 시스템이 어떻게 동작하는지 보여줘야 한다.
@@ -97,6 +101,8 @@ retrieval-first, human-in-the-loop assistant로 설계했다.
 시스템은 자기 오류를 스스로 강화할 수 있다. 내 프로젝트에서는 writeback을 기본 opt-in으로 두고,
 사용자 확인을 더 중요하게 취급하는 방향으로 이를 완화했다.
 이것은 불확실한 결과를 조용히 영구 지식으로 만들어서는 안 된다는 원칙을 반영한다.
+같은 원칙은 duplicate handling에도 적용된다. 새 업로드가 기존 부품과 같아 보일 때,
+자동 중복 생성이나 무조건 덮어쓰기를 하는 대신 review 후 merge하도록 한 것은 data integrity를 위한 설계 결정이다.
 
 또한 나는 **transparency**도 중요하게 봤다.
 이 시스템은 단일한 opaque answer만 주지 않고 evidence, source, ranked candidate를 함께 보여주도록 설계되었다.

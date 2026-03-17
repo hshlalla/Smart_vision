@@ -241,13 +241,15 @@ The indexing workflow ingests one or more images plus model metadata.
 
 The steps are:
 
-1. validate required fields such as `model_id`,
-2. run OCR where appropriate and normalise the resulting text,
-3. generate image and text embeddings,
-4. upsert vectors and metadata into the relevant Milvus collections, and
-5. update model-level aggregated text where structured metadata is available.
+1. generate a metadata preview from the uploaded images,
+2. check whether the draft appears to match an already indexed part,
+3. let the user decide whether to keep a new model or append the upload to an existing model,
+4. run OCR where appropriate and normalise the resulting text,
+5. generate image and text embeddings,
+6. upsert vectors and metadata into the relevant Milvus collections, and
+7. update model-level aggregated text where structured metadata is available.
 
-The workflow is intentionally repeatable. Additional images or corrected metadata can be indexed later without retraining the core embedding models.
+The workflow is intentionally repeatable. Additional images or corrected metadata can be indexed later without retraining the core embedding models. Importantly, repeat ingestion is not treated as a pure duplicate-deletion problem. In realistic secondhand workflows, later uploads may contain cleaner labels, more useful side views, or richer descriptions than the first upload. The current design therefore treats duplicate-looking records as a merge-and-review problem.
 
 #### 3.4.2 Search Workflow
 
@@ -304,6 +306,8 @@ The current system supports human review in three ways:
 3. it now keeps agent-driven Milvus updates disabled by default unless the operator explicitly opts in.
 
 The third point is important. During the final validation pass, the default agent option `update_milvus` was changed from `true` to `false`, and the web UI was updated to require an explicit operator decision before writeback is allowed. This reflects a safer interpretation of the human-review requirement: uncertain predictions should not automatically become new knowledge.
+
+The indexing path also now includes a more specific review rule for repeat registrations. If the metadata preview suggests that the uploaded part matches an existing indexed model, the UI asks whether the new images should be appended to that model or stored as a separate record. This matters because duplicate-looking uploads are not always noise. They may carry better labels, richer descriptions, or additional viewpoints. In the current system, interactive uploads therefore use preview-time user confirmation, while batch ingestion uses a more conservative merge policy based on normalised `maker + part_number` and `part_number` signals.
 
 What is not yet fully implemented is a complete production-grade `accept / edit / reject` workflow with audit logging across the main search UI. That remains a high-priority next step, and the final report should describe it as partial or planned rather than fully complete.
 

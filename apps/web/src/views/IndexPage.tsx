@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import {
+  Alert,
   Badge,
   Button,
   Card,
@@ -45,9 +46,20 @@ type PreviewResponse = {
   draft: MetadataDraft;
   ocr_image_indices: number[];
   label_ocr_text: string;
+  duplicate_candidate?: DuplicateCandidate | null;
 };
 
 type MetadataMode = "auto" | "gpt" | "local";
+
+type DuplicateCandidate = {
+  model_id: string;
+  maker: string;
+  part_number: string;
+  category: string;
+  description: string;
+  image_path: string;
+  reason: string;
+};
 
 const TASK_TERMINAL_STATES = new Set(["completed", "failed"]);
 
@@ -82,6 +94,8 @@ export default function IndexPage() {
   const [labelFiles, setLabelFiles] = useState<File[]>([]);
   const [labelPreviewUrls, setLabelPreviewUrls] = useState<string[]>([]);
   const [labelOcrText, setLabelOcrText] = useState("");
+  const [duplicateCandidate, setDuplicateCandidate] = useState<DuplicateCandidate | null>(null);
+  const [useExistingModel, setUseExistingModel] = useState(false);
 
   useEffect(() => {
     if (!files.length) {
@@ -106,6 +120,12 @@ export default function IndexPage() {
 
   function setDraftField<K extends keyof MetadataDraft>(key: K, value: MetadataDraft[K]) {
     setDraft((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function toMediaUrl(imagePath: string): string {
+    if (!imagePath) return "";
+    const filename = imagePath.split("/").pop() || "";
+    return filename ? `/media/${encodeURIComponent(filename)}` : "";
   }
 
   async function encodeSelectedFiles(): Promise<string[]> {
@@ -170,6 +190,8 @@ export default function IndexPage() {
       });
       setOcrImageIndices(Array.isArray(res.ocr_image_indices) ? res.ocr_image_indices : []);
       setLabelOcrText(res.label_ocr_text || "");
+      setDuplicateCandidate(res.duplicate_candidate ?? null);
+      setUseExistingModel(false);
       notifications.show({
         color: "teal",
         title: t("index.previewCompletedTitle"),
@@ -179,6 +201,8 @@ export default function IndexPage() {
       const msg = err instanceof Error ? err.message : String(err);
       setOcrImageIndices([]);
       setLabelOcrText("");
+      setDuplicateCandidate(null);
+      setUseExistingModel(false);
       notifications.show({ color: "red", title: t("index.previewFailedTitle"), message: msg });
     } finally {
       setPreviewLoading(false);
@@ -229,6 +253,8 @@ export default function IndexPage() {
         setOcrImageIndices([]);
         setLabelFiles([]);
         setLabelOcrText("");
+        setDuplicateCandidate(null);
+        setUseExistingModel(false);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -414,6 +440,68 @@ export default function IndexPage() {
             ) : null}
             {labelOcrText ? (
               <Textarea mt={6} label={t("index.labelOcrLabel")} minRows={3} value={labelOcrText} readOnly />
+            ) : null}
+            {duplicateCandidate ? (
+              <Alert mt={6} color="yellow" title={t("index.duplicateTitle")}>
+                <Stack gap="sm">
+                  <Text size="sm">{t("index.duplicateMessage")}</Text>
+                  <Group gap="xs">
+                    <Badge variant="light">{duplicateCandidate.model_id}</Badge>
+                    {duplicateCandidate.maker ? <Badge variant="outline">{t("index.duplicateMaker", { value: duplicateCandidate.maker })}</Badge> : null}
+                    {duplicateCandidate.part_number ? (
+                      <Badge variant="outline">{t("index.duplicatePartNumber", { value: duplicateCandidate.part_number })}</Badge>
+                    ) : null}
+                    {duplicateCandidate.category ? (
+                      <Badge variant="outline">{t("index.duplicateCategory", { value: duplicateCandidate.category })}</Badge>
+                    ) : null}
+                  </Group>
+                  {duplicateCandidate.image_path ? (
+                    <Group align="flex-start">
+                      <Image
+                        src={toMediaUrl(duplicateCandidate.image_path)}
+                        alt={duplicateCandidate.model_id}
+                        radius="md"
+                        h={88}
+                        w={88}
+                        fit="cover"
+                      />
+                      <Stack gap={4} style={{ minWidth: 0, flex: 1 }}>
+                        <Text size="sm" c="dimmed">
+                          {duplicateCandidate.reason || t("index.duplicateReasonFallback")}
+                        </Text>
+                        {duplicateCandidate.description ? <Text size="sm">{duplicateCandidate.description}</Text> : null}
+                      </Stack>
+                    </Group>
+                  ) : (
+                    <Text size="sm" c="dimmed">
+                      {duplicateCandidate.reason || t("index.duplicateReasonFallback")}
+                    </Text>
+                  )}
+                  <Group>
+                    <Button
+                      variant={useExistingModel ? "filled" : "light"}
+                      onClick={() => {
+                        setUseExistingModel(true);
+                        setDraftField("model_id", duplicateCandidate.model_id);
+                      }}
+                    >
+                      {t("index.useExistingButton")}
+                    </Button>
+                    <Button
+                      variant={!useExistingModel ? "filled" : "light"}
+                      color="gray"
+                      onClick={() => {
+                        setUseExistingModel(false);
+                        setDraft((prev) =>
+                          prev.model_id === duplicateCandidate.model_id ? { ...prev, model_id: "" } : prev,
+                        );
+                      }}
+                    >
+                      {t("index.keepNewButton")}
+                    </Button>
+                  </Group>
+                </Stack>
+              </Alert>
             ) : null}
           </Grid.Col>
 

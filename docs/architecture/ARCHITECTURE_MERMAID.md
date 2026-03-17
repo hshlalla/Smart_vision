@@ -99,29 +99,34 @@ flowchart TD
   FINAL --> OUT[Top-K models + metadata + image list]
 ```
 
-## 4) Sequence 상세 (`/api/v1/hybrid/index`)
+## 4) Sequence 상세 (`/api/v1/hybrid/index/preview` + `/api/v1/hybrid/index/confirm`)
 
 ```mermaid
 sequenceDiagram
   autonumber
   actor User
   participant Web as apps/web IndexPage
-  participant API as apps/api /hybrid/index
+  participant API as apps/api /hybrid/index/*
   participant HS as services/hybrid.py
   participant Orch as HybridSearchOrchestrator
   participant Pre as Preprocessing Pipeline
   participant Milvus as Milvus
 
-  User->>Web: 이미지 + model_id 입력 후 인덱싱 클릭
-  Web->>API: POST multipart/form-data (image, model_id, maker...)
-  API->>HS: index_asset(image, metadata)
-  HS->>Orch: preprocess_and_index(tmp_image, metadata+pk)
+  User->>Web: 이미지 업로드 후 preview 실행
+  Web->>API: POST /index/preview (images + optional metadata)
+  API->>HS: preview_index_asset(images, draft)
+  HS-->>API: metadata draft + optional duplicate candidate
+  API-->>Web: preview response
+  User->>Web: 필드 수정 + 새 모델/기존 모델 선택 후 confirm
+  Web->>API: POST /index/confirm (images + confirmed metadata)
+  API->>HS: confirm_index_asset(images, metadata)
+  HS->>Orch: preprocess_and_index(tmp_image, metadata+pk/model_id)
   Orch->>Pre: OCR + image/text/caption embedding
   Pre-->>Orch: vectors + normalized metadata
   Orch->>Milvus: upsert image_parts/text_parts/attrs_parts/model_texts/caption_parts
   Milvus-->>Orch: insert/flush OK
   Orch-->>HS: success
-  HS-->>API: {"status":"indexed"}
+  HS-->>API: {"status":"queued","task_id":"..."}
   API-->>Web: 200 OK
-  Web-->>User: 인덱싱 완료 표시
+  Web-->>User: 작업 상태 polling 시작
 ```

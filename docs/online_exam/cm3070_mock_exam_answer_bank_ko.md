@@ -20,6 +20,7 @@ CM3070 mock exam용 답안 초안이다.
   - web / API / model 계층을 아우르는 end-to-end prototype
   - OCR + image/text retrieval + Milvus 기반 검색 + catalog grounding
   - regression test와 latency instrumentation
+  - metadata preview와 duplicate review를 포함한 더 안전한 indexing flow
 - 반대로 아직 정직하게 partial / in progress로 말해야 하는 항목은 다음과 같다.
   - aggregate OCR CER/WER 리포팅
   - 전체 p50/p90/p95 latency summary
@@ -51,6 +52,10 @@ CM3070 mock exam용 답안 초안이다.
 시스템은 사용자 이미지와 선택적 텍스트 입력을 받아 OCR 근거를 추출하고,
 image / text retrieval과 vector search를 수행한 뒤, 근거와 함께 가능성 있는 후보 shortlist를 반환한다.
 이 워크플로를 위해 web interface, API layer, model pipeline을 함께 구축했다.
+
+최종 구현에서는 반복 등록에 대한 처리도 더 현실적으로 바뀌었다. 새로 업로드한 부품이 이미 등록된 부품과 같아 보이면,
+무조건 새 `model_id`를 만드는 대신 기존 모델에 추가할지 사용자에게 묻는 방식으로 바뀌었다. 이는 later upload가 더 좋은
+라벨 이미지나 더 풍부한 메타데이터를 가질 수 있기 때문이다.
 
 ---
 

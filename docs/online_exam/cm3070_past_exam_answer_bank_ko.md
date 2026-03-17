@@ -27,6 +27,7 @@
 - 문제 적합성이 높다. 개방형(open-world), 미세 구분(fine-grained), 텍스트 민감(text-sensitive)한 부품 식별은 실제로 어려운 문제다.
 - 시스템 차원의 기여가 분명하다. OCR, 멀티모달 검색, 카탈로그 검색, agent orchestration을 하나의 워크플로우로 묶었다.
 - 설계 framing이 정직하다. 자동 확정 시스템이 아니라 shortlist + evidence + user verification 구조를 택했다.
+- 현장형 safeguard가 있다. 중복처럼 보이는 재등록 입력을 자동 폐기하지 않고 review 후 merge할 수 있다.
 - 웹, API, 모델 계층을 포함하는 실제 동작 프로토타입이 있다.
 - 최근 작업으로 안전성(safety)과 테스트 가능성(testability)이 개선되었다.
 

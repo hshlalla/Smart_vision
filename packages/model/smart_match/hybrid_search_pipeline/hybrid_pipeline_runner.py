@@ -91,6 +91,8 @@ class HybridSearchOrchestrator:
         caption_collection: str = "bge_m3_caption_parts",
         fusion_weights: FusionWeights = FusionWeights(alpha=0.5, beta=0.3, gamma=0.2),
         tracker_dataset_path: str | Path | None = None,
+        load_vector_collections: bool = True,
+        load_metadata_collections: bool = True,
     ) -> None:
         self._connect_milvus(milvus)
         self.vision_encoder = Qwen3VLImageEncoder()
@@ -159,7 +161,10 @@ class HybridSearchOrchestrator:
             caption_collection_name=caption_collection,
         )
         self.index.create_indexes()
-        self.index.load()
+        self.index.load(
+            include_vector_collections=load_vector_collections,
+            include_metadata_collections=load_metadata_collections,
+        )
 
         self.retriever = HybridFusionRetriever(
             cross_encoder=self.reranker or self._noop_cross_encoder,
@@ -417,6 +422,20 @@ class HybridSearchOrchestrator:
         return f"{existing_text}\n{new_caption}"
 
     @staticmethod
+    def _merge_freeform_text(existing_text: str, new_text: str) -> str:
+        existing_text = (existing_text or "").strip()
+        new_text = (new_text or "").strip()
+        if not new_text:
+            return existing_text
+        if not existing_text:
+            return new_text
+        if new_text.lower() in existing_text.lower():
+            return existing_text
+        if existing_text.lower() in new_text.lower():
+            return new_text
+        return f"{existing_text}\n{new_text}"
+
+    @staticmethod
     def _truncate_text(text: str, limit: int) -> str:
         text = (text or "").strip()
         if not text:
@@ -437,26 +456,42 @@ class HybridSearchOrchestrator:
             existing_set.add(text)
         return "\n".join(existing_lines)
 
-    def index_model_metadata(self, model_id: str, metadata: Dict[str, str]) -> Dict[str, object]:
-        existing = self.index.get_model(
-            model_id,
-            output_fields=[
-                "pk",
-                "metadata_text",
-                "ocr_text",
-                "caption_text",
-                "maker",
-                "part_number",
-                "category",
-                "description",
-            ],
-        ) or {}
+    def index_model_metadata(
+        self,
+        model_id: str,
+        metadata: Dict[str, str],
+        *,
+        merge_existing: bool = True,
+        fetch_after_upsert: bool = True,
+    ) -> Dict[str, object]:
+        existing = (
+            self.index.get_model(
+                model_id,
+                output_fields=[
+                    "pk",
+                    "metadata_text",
+                    "ocr_text",
+                    "caption_text",
+                    "maker",
+                    "part_number",
+                    "category",
+                    "description",
+                ],
+            )
+            or {}
+        ) if merge_existing else {}
         payload = dict(metadata)
         payload["model_id"] = model_id
 
         merged_payload = {"model_id": model_id}
         for key in ("maker", "part_number", "category", "description"):
             new_value = payload.get(key)
+            if key == "description":
+                merged_payload[key] = self._merge_freeform_text(
+                    str(existing.get(key, "") or ""),
+                    str(new_value or ""),
+                )
+                continue
             if new_value is not None and str(new_value).strip():
                 merged_payload[key] = str(new_value).strip()
             else:
@@ -471,7 +506,10 @@ class HybridSearchOrchestrator:
 
         normalized = self.metadata_normalizer.normalize(merged_payload)
         normalized["model_id"] = model_id
-        metadata_text = self._build_metadata_text(normalized)
+        metadata_text = self._merge_freeform_text(
+            str(existing.get("metadata_text", "") or ""),
+            self._build_metadata_text(normalized),
+        )
         ocr_text = existing.get("ocr_text", "")
         caption_text = existing.get("caption_text", "")
         logger.debug("Indexing model metadata: model_id=%s, metadata_text_len=%d, existing_ocr_len=%d",
@@ -491,22 +529,34 @@ class HybridSearchOrchestrator:
         }
 
         self.index.upsert_model(model_id=model_id, text_vector=vector, extra_values=extra_values)
-        updated = self.index.get_model(
-            model_id,
-            output_fields=[
-                "pk",
-                "metadata_text",
-                "ocr_text",
-                "caption_text",
-                "maker",
-                "part_number",
-                "category",
-                "description",
-            ],
-        )
         logger.info("Model metadata indexed: model_id=%s, combined_text_tokens=%d",
                     model_id, len(vector))
-        return updated or {}
+        if fetch_after_upsert:
+            updated = self.index.get_model(
+                model_id,
+                output_fields=[
+                    "pk",
+                    "metadata_text",
+                    "ocr_text",
+                    "caption_text",
+                    "maker",
+                    "part_number",
+                    "category",
+                    "description",
+                ],
+            )
+            return updated or {}
+
+        return {
+            "pk": model_id,
+            "metadata_text": metadata_text,
+            "ocr_text": ocr_text,
+            "caption_text": caption_text,
+            "maker": extra_values["maker"],
+            "part_number": extra_values["part_number"],
+            "category": extra_values["category"],
+            "description": extra_values["description"],
+        }
 
     def _update_model_with_texts(
         self,
@@ -515,6 +565,8 @@ class HybridSearchOrchestrator:
         normalized_metadata: Dict[str, str],
         ocr_tokens,
         caption_text: str,
+        *,
+        fetch_after_upsert: bool = True,
     ) -> Dict[str, object]:
         existing_metadata_text = model_record.get("metadata_text") or self._build_metadata_text(normalized_metadata)
         existing_ocr_text = model_record.get("ocr_text", "")
@@ -538,26 +590,38 @@ class HybridSearchOrchestrator:
             "description": normalized_metadata.get("description", model_record.get("description", "")),
         }
         self.index.upsert_model(model_id=model_id, text_vector=vector, extra_values=extra_values)
-        updated = self.index.get_model(
-            model_id,
-            output_fields=[
-                "pk",
-                "metadata_text",
-                "ocr_text",
-                "caption_text",
-                "maker",
-                "part_number",
-                "category",
-                "description",
-            ],
-        )
         logger.info(
             "Merged OCR/caption for model_id=%s, ocr_lines=%d, caption_chars=%d",
             model_id,
             len(merged_ocr_text.split("\n")) if merged_ocr_text else 0,
             len(merged_caption_text),
         )
-        return updated or model_record
+        if fetch_after_upsert:
+            updated = self.index.get_model(
+                model_id,
+                output_fields=[
+                    "pk",
+                    "metadata_text",
+                    "ocr_text",
+                    "caption_text",
+                    "maker",
+                    "part_number",
+                    "category",
+                    "description",
+                ],
+            )
+            return updated or model_record
+
+        return {
+            "pk": model_id,
+            "metadata_text": existing_metadata_text,
+            "ocr_text": merged_ocr_text,
+            "caption_text": merged_caption_text,
+            "maker": extra_values["maker"],
+            "part_number": extra_values["part_number"],
+            "category": extra_values["category"],
+            "description": extra_values["description"],
+        }
 
     @staticmethod
     def _connect_milvus(config: MilvusConnectionConfig) -> None:
@@ -571,7 +635,17 @@ class HybridSearchOrchestrator:
             db_name=config.db_name,
         )
 
-    def preprocess_and_index(self, image_path: str | Path, metadata: Dict[str, str], *, enable_ocr: bool | None = None) -> None:
+    def preprocess_and_index(
+        self,
+        image_path: str | Path,
+        metadata: Dict[str, str],
+        *,
+        enable_ocr: bool | None = None,
+        model_record: Dict[str, object] | None = None,
+        refresh_model_metadata: bool = True,
+        check_existing_pk: bool = True,
+        fetch_after_upsert: bool = True,
+    ) -> Dict[str, object]:
         """Run preprocessing pipeline and insert results into Milvus."""
         metadata = dict(metadata)
         model_id = metadata.get("model_id")
@@ -581,7 +655,13 @@ class HybridSearchOrchestrator:
         logger.info("Starting indexing for model_id=%s with image=%s", model_id, image_path)
 
         t_start = time.perf_counter()
-        model_record = self.index_model_metadata(model_id, metadata)
+        if refresh_model_metadata or model_record is None:
+            model_record = self.index_model_metadata(
+                model_id,
+                metadata,
+                merge_existing=check_existing_pk,
+                fetch_after_upsert=fetch_after_upsert,
+            )
         t_after_model = time.perf_counter()
         logger.info("Timing: index_model_metadata done in %.2fs for model_id=%s", t_after_model - t_start, model_id)
 
@@ -612,13 +692,14 @@ class HybridSearchOrchestrator:
                 normalized_metadata,
                 record.ocr_tokens,
                 record.caption_text,
+                fetch_after_upsert=fetch_after_upsert,
             )
             t_after_update_texts = time.perf_counter()
             logger.info("Timing: _update_model_with_texts done in %.2fs for model_id=%s",
                         t_after_update_texts - t_after_preprocess, model_id)
 
             primary_key = normalized_metadata.get("pk") or metadata.get("pk")
-            if primary_key and self._primary_key_exists(primary_key):
+            if check_existing_pk and primary_key and self._primary_key_exists(primary_key):
                 logger.warning(
                     "Duplicate primary key detected for model_id=%s (pk=%s); allocating a new key.",
                     model_id,
@@ -672,6 +753,7 @@ class HybridSearchOrchestrator:
         finally:
             if embedding_image_path is not None:
                 Path(embedding_image_path).unlink(missing_ok=True)
+        return model_record
 
     @staticmethod
     def _prepare_embedding_image(image_path: str | Path, *, max_side: int = 1024, quality: int = 85) -> Path:

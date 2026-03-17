@@ -32,6 +32,7 @@ from smart_match.hybrid_search_pipeline.search.ranking_utils import (
     compute_lexical_score,
     passes_min_score,
 )
+from smart_match.hybrid_search_pipeline.preprocessing.metadata_normalizer import MetadataNormalizer
 
 from ..core.config import settings
 from ..core.logger import get_logger
@@ -371,6 +372,7 @@ class HybridSearchService:
         self._text_only_runtime: _TextOnlySearchRuntime | None = None
         self._metadata_preview_runtime: _MetadataPreviewRuntime | None = None
         self._qwen_metadata_preview_runtime: _QwenMetadataPreviewRuntime | None = None
+        self._metadata_normalizer = MetadataNormalizer()
 
     @property
     def orchestrator(self) -> HybridSearchOrchestrator:
@@ -436,11 +438,13 @@ class HybridSearchService:
                 backend_override=metadata_mode,
                 label_ocr_text=label_ocr_text,
             )
+            duplicate_candidate = self._find_duplicate_candidate(draft)
             return {
                 "status": "preview_ready",
                 "draft": draft,
                 "ocr_image_indices": ocr_image_indices,
                 "label_ocr_text": label_ocr_text,
+                "duplicate_candidate": duplicate_candidate,
             }
         finally:
             for image_path in image_paths:
@@ -923,6 +927,72 @@ class HybridSearchService:
         merged = "\n".join(texts).strip()
         logger.info("Label OCR completed: images=%d chars=%d duration=%.2fs", len(image_paths[:4]), len(merged), time.perf_counter() - start)
         return merged
+
+    def _find_duplicate_candidate(self, draft: Dict[str, Any]) -> Dict[str, Any] | None:
+        part_number_raw = str(draft.get("part_number") or "").strip()
+        if not part_number_raw:
+            return None
+
+        normalized = self._metadata_normalizer.normalize(
+            {
+                "maker": str(draft.get("maker") or ""),
+                "part_number": part_number_raw,
+            }
+        )
+        normalized_part_number = str(normalized.get("part_number") or "").strip()
+        normalized_maker = str(normalized.get("maker") or "").strip().lower()
+        if not normalized_part_number:
+            return None
+
+        try:
+            connections.connect(alias="default", uri=settings.MILVUS_URI)
+            if not utility.has_collection(settings.HYBRID_MODEL_COLLECTION):
+                return None
+            model_collection = Collection(name=settings.HYBRID_MODEL_COLLECTION)
+            safe_part_number = normalized_part_number.replace("\\", "\\\\").replace('"', '\\"')
+            rows = model_collection.query(
+                expr=f'part_number == "{safe_part_number}"',
+                output_fields=["pk", "maker", "part_number", "category", "description"],
+            )
+            if not rows:
+                return None
+
+            matched_row = None
+            if normalized_maker:
+                for row in rows:
+                    row_maker = str(row.get("maker") or "").strip().lower()
+                    if row_maker == normalized_maker:
+                        matched_row = row
+                        break
+            if matched_row is None and len(rows) == 1:
+                matched_row = rows[0]
+            if matched_row is None:
+                return None
+
+            image_path = ""
+            if utility.has_collection(settings.HYBRID_ATTRS_COLLECTION):
+                attrs_collection = Collection(name=settings.HYBRID_ATTRS_COLLECTION)
+                safe_model_id = str(matched_row.get("pk") or "").replace("\\", "\\\\").replace('"', '\\"')
+                attr_rows = attrs_collection.query(
+                    expr=f'model_id == "{safe_model_id}"',
+                    output_fields=["pk", "image_path"],
+                )
+                if attr_rows:
+                    attr_rows.sort(key=lambda item: str(item.get("pk") or ""))
+                    image_path = str(attr_rows[0].get("image_path") or "")
+
+            return {
+                "model_id": str(matched_row.get("pk") or ""),
+                "maker": str(matched_row.get("maker") or ""),
+                "part_number": str(matched_row.get("part_number") or ""),
+                "category": str(matched_row.get("category") or ""),
+                "description": str(matched_row.get("description") or ""),
+                "image_path": image_path,
+                "reason": "Existing indexed part with the same part number was found.",
+            }
+        except Exception:
+            logger.exception("Failed to look up duplicate candidate for metadata preview.")
+            return None
 
     @staticmethod
     def _metadata_preview_has_minimum_signal(draft: Dict[str, Any]) -> bool:

@@ -13,10 +13,14 @@ Smart Vision Model Release Notes
 - 인덱싱 전처리에서 OCR 입력과 임베딩 입력을 분리했습니다.
 - 저장용/임베딩용 이미지 사본은 축소본을 사용하도록 조정했습니다.
 - 메타 preview / caption 전략이 `LOCAL_MODE`와 상위 API 설정 기준에 맞춰 정리되었습니다.
+- 대량 인입 시 기존 벡터 인덱스를 매번 다시 생성하지 않도록 조정해 재인덱싱 startup 정체를 줄였습니다.
+- unified JSONL 인입은 동일 부품이 다른 `model_id`로 다시 들어와도 기존 모델에 merge 할 수 있도록 `maker + part_number` / `part_number` 기반 dedup 경로를 사용합니다.
+- 중복으로 판단된 후속 입력은 skip만 하지 않고, 더 풍부한 `description`/`metadata_text`를 기존 모델 텍스트에 병합하도록 정리했습니다.
 
 ### Fixed
 - text-only 검색 경로가 attrs 이미지 정보를 함께 반환하지 않던 문제를 수정했습니다.
 - part number exact match에서 공백/하이픈 차이에 덜 민감하도록 정규화 매칭을 보강했습니다.
+- 기존 Milvus 인덱스가 이미 존재하는 상황에서 `create_index()` 재호출 대기로 인입이 멈추던 문제를 수정했습니다.
 
 ## 2.3.0
 

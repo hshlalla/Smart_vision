@@ -26,6 +26,8 @@
   - FastAPI backend
   - model package for hybrid retrieval
   - OCR + image/text embeddings + Milvus vector search + catalog retrieval + agent orchestration
+- Practical design note:
+  - duplicate-looking uploads are treated as a merge-and-review problem because later uploads may contain better labels, richer metadata, or additional views
 - Evidence boundary:
   - end-to-end prototype exists
   - regression tests exist

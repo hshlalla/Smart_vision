@@ -16,6 +16,10 @@
   - Controlled by env flags
 - Metadata normalization
   - maker / part number / category cleanup
+- Duplicate-aware ingestion
+  - interactive preview can surface a duplicate candidate for user review
+  - batch ingestion can reuse an existing model when normalized `maker + part_number` or `part_number` matches
+  - richer later metadata is merged instead of blindly discarded
 - Milvus persistence
   - image vectors
   - text vectors
@@ -38,6 +42,7 @@
 - Apple Silicon device selection supports `mps`.
 - OCR can be fully disabled or separated between indexing and query-time.
 - Metadata preview experiments moved away from OCR-first on Apple Silicon because OCR preview was too slow and inaccurate for the current workflow.
+- Repeated ingestion is no longer treated as a pure duplicate-drop problem. The current policy is to preserve richer later data by merging text fields and appending genuinely new images under the existing `model_id`.
 
 ## Installation
 

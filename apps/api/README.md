@@ -31,8 +31,13 @@ It serves hybrid search, async indexing, authentication, agent chat, catalog sea
    - Backend can be GPT or local Qwen depending on configuration and UI override.
    - Optional label-only OCR inputs can be uploaded from the UI and supplied as stronger evidence.
    - Label OCR is only used as preview-time evidence for metadata generation.
+   - Preview also checks whether an existing indexed part already matches the draft `part_number` (and maker when available).
+   - If a likely duplicate is found, the API returns a duplicate candidate so the UI can ask whether the new upload should be appended to the existing model.
 2. User review
    - User can edit maker, part number, category, description, product info, and price.
+   - User can explicitly choose:
+     - keep the upload as a new model, or
+     - append it to an existing indexed model when the system finds a likely duplicate.
 3. `confirm`
    - Returns immediately with `task_id`.
    - Actual indexing runs in a background worker.
@@ -100,6 +105,28 @@ Typical combination pattern:
   - explains what the indexed document says about that part
 - final answer
   - merges both into one response, e.g. "this appears to match part X, and the internal catalog/manual describes it as Y on page Z"
+
+### Duplicate Review and Merge Rationale
+
+The duplicate review step was added for a practical field scenario:
+
+- the same physical part can be uploaded more than once,
+- a later upload may have better label visibility, cleaner images, or richer seller metadata,
+- and blindly creating a new `model_id` would fragment search results and inventory history.
+
+Because of that, the current design prefers human-reviewed merge behavior for interactive indexing:
+
+- `preview` warns when an existing indexed part with the same normalized `part_number` is found,
+- the user can decide whether to append the new images/metadata to the existing model,
+- and `confirm` uses that choice by keeping the existing `model_id` when the user accepts the merge.
+
+For offline dataset ingestion, the batch script uses a stronger automatic policy:
+
+- first match on normalized `maker + part_number`,
+- then fall back to normalized `part_number` when that value is unique,
+- skip exact duplicate image paths,
+- append genuinely new images to the existing model,
+- and merge richer text fields instead of discarding them.
 
 ## Run
 
@@ -231,6 +258,13 @@ Structured fields persisted in search/index collections are currently centered o
 - `image_path`
 
 `product_info` and `price_value` currently act more like enrichment inputs than fully expanded first-class retrieval columns.
+
+When duplicate items are merged into an existing model, the current ingestion/indexing path tries to preserve richer later data:
+
+- `description` is merged instead of blindly overwritten,
+- `metadata_text` is merged and re-embedded,
+- `caption_text` is accumulated across images,
+- and newly uploaded images are added under the existing `model_id`.
 
 ## API Examples
 

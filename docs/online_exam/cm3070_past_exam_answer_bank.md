@@ -27,6 +27,7 @@ The most honest description of the current outcome is:
 - Strong problem fit: open-world, fine-grained, text-sensitive part identification is a real marketplace problem.
 - Clear system contribution: integrates OCR, multimodal retrieval, catalog search, and agent orchestration.
 - Honest design framing: shortlist + evidence + user verification rather than overclaiming automation.
+- Practical indexing safeguard: duplicate-looking uploads can be reviewed and merged instead of silently fragmenting the inventory.
 - Working architecture across web, API, and model layers.
 - Recent hardening work improved safety and testability.
 

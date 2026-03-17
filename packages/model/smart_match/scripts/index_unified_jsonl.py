@@ -26,15 +26,18 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Optional
 
 from smart_match.hybrid_search_pipeline.hybrid_pipeline_runner import (
     HybridSearchOrchestrator,
     MilvusConnectionConfig,
 )
+from smart_match.hybrid_search_pipeline.preprocessing.metadata_normalizer import MetadataNormalizer
 
 logger = logging.getLogger(__name__)
+_NORMALIZER = MetadataNormalizer()
 
 
 def _iter_jsonl(path: Path) -> Iterable[dict[str, Any]]:
@@ -128,6 +131,118 @@ def _deterministic_image_pk(model_id: str, image_index: int) -> str:
     return f"{model_id}::img_{image_index:03d}"
 
 
+def _model_signature(*, maker: str, part_number: str) -> str:
+    normalized = _NORMALIZER.normalize(
+        {
+            "maker": maker,
+            "part_number": part_number,
+        }
+    )
+    maker_value = str(normalized.get("maker", "") or "").strip().lower()
+    part_value = str(normalized.get("part_number", "") or "").strip().upper()
+    if maker_value and part_value:
+        return f"{maker_value}::{part_value}"
+    if part_value:
+        return f"::{part_value}"
+    return ""
+
+
+def _part_number_key(part_number: str) -> str:
+    normalized = _NORMALIZER.normalize({"part_number": part_number})
+    return str(normalized.get("part_number", "") or "").strip().upper()
+
+
+def _build_existing_signature_maps(
+    orchestrator: HybridSearchOrchestrator,
+) -> tuple[dict[str, Optional[str]], dict[str, Optional[str]]]:
+    collection = orchestrator.index.model_collection
+    if collection is None:
+        return {}, {}
+    try:
+        rows = collection.query(
+            expr='pk != ""',
+            output_fields=["pk", "maker", "part_number"],
+        )
+    except Exception:
+        logger.exception("Failed to preload existing model signatures from Milvus.")
+        return {}, {}
+
+    signature_map: dict[str, Optional[str]] = {}
+    part_map: dict[str, Optional[str]] = {}
+    for row in rows:
+        model_id = _clean_text(row.get("pk"))
+        part_number = _clean_text(row.get("part_number"))
+        signature = _model_signature(
+            maker=_clean_text(row.get("maker")),
+            part_number=part_number,
+        )
+        if not model_id or not signature:
+            pass
+        else:
+            existing = signature_map.get(signature)
+            if existing is None and signature in signature_map:
+                pass
+            elif existing and existing != model_id:
+                signature_map[signature] = None
+            else:
+                signature_map[signature] = model_id
+
+        part_key = _part_number_key(part_number)
+        if not model_id or not part_key:
+            continue
+        existing_part = part_map.get(part_key)
+        if existing_part is None and part_key in part_map:
+            continue
+        if existing_part and existing_part != model_id:
+            part_map[part_key] = None
+            continue
+        part_map[part_key] = model_id
+    return signature_map, part_map
+
+
+def _update_signature_maps(
+    signature_map: dict[str, Optional[str]],
+    part_map: dict[str, Optional[str]],
+    *,
+    model_id: str,
+    maker: str,
+    part_number: str,
+) -> None:
+    signature = _model_signature(maker=maker, part_number=part_number)
+    if not signature or not model_id:
+        pass
+    else:
+        existing = signature_map.get(signature)
+        if existing and existing != model_id:
+            signature_map[signature] = None
+        elif signature not in signature_map:
+            signature_map[signature] = model_id
+
+    part_key = _part_number_key(part_number)
+    if not part_key or not model_id:
+        return
+    existing_part = part_map.get(part_key)
+    if existing_part and existing_part != model_id:
+        part_map[part_key] = None
+        return
+    if part_key not in part_map:
+        part_map[part_key] = model_id
+
+
+def _extract_next_image_index(*, model_id: str, primary_keys: Iterable[str]) -> int:
+    pattern = re.compile(rf"^{re.escape(model_id)}::img_(\d+)$")
+    max_index = 0
+    for pk in primary_keys:
+        match = pattern.match(str(pk))
+        if not match:
+            continue
+        try:
+            max_index = max(max_index, int(match.group(1)))
+        except ValueError:
+            continue
+    return max_index + 1
+
+
 def run_unified_ingestion(
     *,
     dataset_path: Path,
@@ -140,7 +255,13 @@ def run_unified_ingestion(
 ) -> dict[str, Any]:
     orchestrator = None if dry_run else HybridSearchOrchestrator(
         milvus=MilvusConnectionConfig(uri=milvus_uri),
+        load_vector_collections=False,
+        load_metadata_collections=True,
     )
+    if dry_run or orchestrator is None:
+        signature_map, part_map = {}, {}
+    else:
+        signature_map, part_map = _build_existing_signature_maps(orchestrator)
 
     indexed: list[str] = []
     skipped: list[str] = []
@@ -155,39 +276,100 @@ def run_unified_ingestion(
             continue
 
         metadata = _build_metadata(row)
-        model_id = metadata.get("model_id", "")
-        if not model_id:
+        source_model_id = metadata.get("model_id", "")
+        if not source_model_id:
             skipped.append("missing model_id")
             continue
 
         image_paths = _resolve_image_paths(row, repo_root)
         if not image_paths:
-            skipped.append(f"{model_id} (no resolvable images)")
+            skipped.append(f"{source_model_id} (no resolvable images)")
             continue
         caption_map = _build_caption_map(row, repo_root)
 
         prepared += 1
         if dry_run:
-            indexed.append(f"{model_id} ({len(image_paths)} images, dry-run)")
+            indexed.append(f"{source_model_id} ({len(image_paths)} images, dry-run)")
         else:
             try:
                 assert orchestrator is not None
-                orchestrator.index_model_metadata(model_id, metadata)
+                canonical_model_id = source_model_id
+                signature = _model_signature(
+                    maker=metadata.get("maker", ""),
+                    part_number=metadata.get("part_number", ""),
+                )
+                matched_model_id = signature_map.get(signature) if signature else None
+                if not matched_model_id:
+                    matched_model_id = part_map.get(_part_number_key(metadata.get("part_number", "")))
+                if matched_model_id and matched_model_id != source_model_id:
+                    canonical_model_id = matched_model_id
+                    logger.info(
+                        "Dedup match detected: source_model_id=%s matched existing_model_id=%s",
+                        source_model_id,
+                        canonical_model_id,
+                    )
+
+                metadata["model_id"] = canonical_model_id
+                existing_rows = orchestrator.index.query_attributes_by_model(
+                    canonical_model_id,
+                    output_fields=["pk", "image_path"],
+                )
+                existing_pks = {
+                    str(row.get("pk") or "")
+                    for row in existing_rows
+                    if row.get("pk")
+                }
+                existing_paths = {
+                    str(row.get("image_path") or "")
+                    for row in existing_rows
+                    if row.get("image_path")
+                }
+                next_image_index = _extract_next_image_index(
+                    model_id=canonical_model_id,
+                    primary_keys=existing_pks,
+                )
+                model_record = orchestrator.index_model_metadata(
+                    canonical_model_id,
+                    metadata,
+                    merge_existing=True,
+                    fetch_after_upsert=False,
+                )
+                _update_signature_maps(
+                    signature_map,
+                    part_map,
+                    model_id=canonical_model_id,
+                    maker=metadata.get("maker", ""),
+                    part_number=metadata.get("part_number", ""),
+                )
                 default_caption = _clean_text(row.get("generated_caption"))
                 for image_index, path in enumerate(image_paths, start=1):
-                    pk = _deterministic_image_pk(model_id, image_index)
-                    existing = orchestrator.index.fetch_attributes([pk], output_fields=["pk"])
-                    if existing:
+                    resolved_path = str(path.resolve())
+                    deterministic_pk = _deterministic_image_pk(canonical_model_id, image_index)
+                    if resolved_path in existing_paths or deterministic_pk in existing_pks:
                         skipped_images += 1
                         continue
                     per_image_metadata = dict(metadata)
+                    if canonical_model_id == source_model_id:
+                        pk = deterministic_pk
+                    else:
+                        pk = _deterministic_image_pk(canonical_model_id, next_image_index)
+                        next_image_index += 1
+                    existing_pks.add(pk)
+                    existing_paths.add(resolved_path)
                     per_image_metadata["pk"] = pk
                     per_image_metadata["caption_text"] = caption_map.get(str(path), default_caption)
-                    orchestrator.preprocess_and_index(path, per_image_metadata)
-                indexed.append(f"{model_id} ({len(image_paths)} images)")
+                    model_record = orchestrator.preprocess_and_index(
+                        path,
+                        per_image_metadata,
+                        model_record=model_record,
+                        refresh_model_metadata=False,
+                        check_existing_pk=False,
+                        fetch_after_upsert=False,
+                    )
+                indexed.append(f"{canonical_model_id} ({len(image_paths)} images)")
             except Exception as exc:
-                logger.exception("Unified ingestion failed for %s", model_id)
-                errors.append(f"{model_id}: {exc}")
+                logger.exception("Unified ingestion failed for %s", source_model_id)
+                errors.append(f"{source_model_id}: {exc}")
 
         if limit is not None and prepared >= limit:
             break

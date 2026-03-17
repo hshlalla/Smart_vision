@@ -25,9 +25,11 @@ Smart_vision/
   - Text-only queries use a lightweight `BGE-M3 + Milvus model collection` path.
   - Image queries use the heavier multimodal path.
 - Indexing
-  - `preview` creates metadata drafts.
+  - `preview` creates metadata drafts and can return a likely duplicate candidate.
   - `confirm` runs async background indexing and returns a `task_id`.
   - Task state is polled from `/api/v1/hybrid/index/tasks/{task_id}`.
+  - Interactive indexing can keep a new model or append to an existing model after user confirmation.
+  - Batch ingestion also reuses existing models when normalized `maker + part_number` or `part_number` already matches.
 - Agent chat
   - Uses internal hybrid search first.
   - Can still call web/catalog tools when needed.
@@ -111,3 +113,4 @@ See [apps/api/README.md](/Users/studio/Downloads/project/Smart_vision/apps/api/R
 - Apple Silicon support is implemented through `cuda -> mps -> cpu` device selection for PyTorch paths.
 - The project now uses SQLite for `model_id` counters instead of a Milvus counter collection.
 - Text-only search was separated from the heavy multimodal runtime to reduce latency and memory pressure.
+- Duplicate-looking records are treated as a `review + merge` problem rather than a pure duplicate-drop problem, because later uploads may contain richer images or metadata.

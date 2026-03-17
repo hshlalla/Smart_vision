@@ -120,7 +120,9 @@ Email: hshlalla@naver.com
 
 1. 하이브리드 인덱싱
 - preview 단계에서 GPT metadata draft 생성
+- preview 단계에서 part number 기반 duplicate candidate 확인 가능
 - confirm 단계에서 `model_id` 자동 할당 가능
+- 사용자가 기존 모델 append 또는 새 모델 유지 선택 가능
 - 여러 장 이미지 전처리(OCR/임베딩/캡션) 후 모델 단위 Milvus upsert
 
 2. 하이브리드 검색
@@ -143,6 +145,7 @@ Email: hshlalla@naver.com
 
 1. `HybridSearchOrchestrator`
 - 인덱싱/검색/모델메타 upsert 단일 진입점
+- 반복 인입 시 기존 모델 메타 merge와 새 이미지 append를 지원
 
 2. 전처리 파이프라인
 - OCR: `PaddleOCRVLPipeline` (fallback to PaddleOCR)

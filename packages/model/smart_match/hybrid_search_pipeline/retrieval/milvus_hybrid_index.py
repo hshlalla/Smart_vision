@@ -162,7 +162,8 @@ class HybridMilvusIndex:
         self._assert_vector_field(self.image_collection, "image")
         self._assert_vector_field(self.text_collection, "text")
         self._assert_vector_field(self.attrs_collection, "attrs")
-        self.image_collection.create_index(
+        self._create_index_if_missing(
+            self.image_collection,
             field_name="vector",
             index_params={
                 "index_type": self._image_cfg.index_type,
@@ -170,7 +171,8 @@ class HybridMilvusIndex:
                 "params": {"efConstruction": self._image_cfg.ef_construction, "M": self._image_cfg.M},
             },
         )
-        self.text_collection.create_index(
+        self._create_index_if_missing(
+            self.text_collection,
             field_name="vector",
             index_params={
                 "index_type": self._text_cfg.index_type,
@@ -178,7 +180,8 @@ class HybridMilvusIndex:
                 "params": {"efConstruction": self._text_cfg.ef_construction, "M": self._text_cfg.M},
             },
         )
-        self.attrs_collection.create_index(
+        self._create_index_if_missing(
+            self.attrs_collection,
             field_name="vector",
             index_params={
                 "index_type": "FLAT",
@@ -187,7 +190,8 @@ class HybridMilvusIndex:
         )
         if self.model_collection and self._model_cfg:
             self._assert_vector_field(self.model_collection, "model")
-            self.model_collection.create_index(
+            self._create_index_if_missing(
+                self.model_collection,
                 field_name="vector",
                 index_params={
                     "index_type": self._model_cfg.index_type,
@@ -197,7 +201,8 @@ class HybridMilvusIndex:
             )
         if self.caption_collection and self._caption_cfg:
             self._assert_vector_field(self.caption_collection, "caption")
-            self.caption_collection.create_index(
+            self._create_index_if_missing(
+                self.caption_collection,
                 field_name="vector",
                 index_params={
                     "index_type": self._caption_cfg.index_type,
@@ -219,6 +224,35 @@ class HybridMilvusIndex:
             f"Current schema fields: [{field_desc}]. "
             "Drop/recreate conflicting collections and ensure COUNTERS_COLLECTION does not reuse vector collection names."
         )
+
+    @staticmethod
+    def _has_index(collection: Collection, field_name: str) -> bool:
+        for index in collection.indexes:
+            if getattr(index, "field_name", None) == field_name:
+                return True
+        return False
+
+    def _create_index_if_missing(
+        self,
+        collection: Collection,
+        *,
+        field_name: str,
+        index_params: Dict[str, object],
+    ) -> None:
+        if self._has_index(collection, field_name):
+            logger.info(
+                "Milvus collection '%s' already has an index on '%s'; skipping create_index.",
+                collection.name,
+                field_name,
+            )
+            return
+        logger.info(
+            "Creating Milvus index: collection=%s field=%s params=%s",
+            collection.name,
+            field_name,
+            index_params,
+        )
+        collection.create_index(field_name=field_name, index_params=index_params)
 
     def insert(
         self,
@@ -275,15 +309,23 @@ class HybridMilvusIndex:
         if self.model_collection:
             self.model_collection.flush()
 
-    def load(self) -> None:
-        """Load collections into memory for search operations."""
-        self.image_collection.load()
-        self.text_collection.load()
-        self.attrs_collection.load()
-        if self.model_collection:
-            self.model_collection.load()
-        if self.caption_collection:
-            self.caption_collection.load()
+    def load(self, *, include_vector_collections: bool = True, include_metadata_collections: bool = True) -> None:
+        """Load collections into memory.
+
+        For ingestion-only workloads, loading the vector collections is unnecessary and can
+        block startup while Milvus warms indexes. In that case callers can set
+        ``include_vector_collections=False`` and only load the collections queried during
+        write-time bookkeeping.
+        """
+        if include_vector_collections:
+            self.image_collection.load()
+            self.text_collection.load()
+            if self.caption_collection:
+                self.caption_collection.load()
+        if include_metadata_collections:
+            self.attrs_collection.load()
+            if self.model_collection:
+                self.model_collection.load()
 
     @staticmethod
     def _build_row_payload(

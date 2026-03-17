@@ -12,6 +12,10 @@ Current UI features
 - Index
   - metadata preview mode switch: `Auto`, `GPT`, `Local`
   - optional `Label OCR` popup for label-only supporting images
+  - duplicate candidate banner when the preview draft appears to match an already indexed part
+  - explicit user choice between:
+    - keeping the upload as a new model
+    - adding the upload to the existing indexed model
   - async indexing status polling
 - Search
   - image/text hybrid search
@@ -25,6 +29,11 @@ Current UI features
   - if catalog RAG evidence is used, the answer can include document source/page citations in addition to the matched product card
   - internal inventory answers and open-world web answers can still differ depending on the question
   - simple markdown tables in answers are rendered as tables when possible
+
+Why the duplicate banner exists
+- In real use, the same part can be uploaded again later with cleaner photos, better labels, or richer metadata.
+- Creating a new model every time would fragment the inventory and weaken retrieval quality.
+- The Index screen therefore exposes the decision to the user instead of silently forcing either `new model` or `merge`.
 
 ## Setup
 

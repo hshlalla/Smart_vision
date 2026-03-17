@@ -113,7 +113,7 @@ interactive AI literature는 evidence 노출과 user correction 가능성이 신
 
 #### 3.4.1 Indexing Workflow
 
-인덱싱 시 이미지를 받고, metadata를 정리하고, OCR 및 embedding을 생성한 뒤, 관련 collection에 upsert한다.
+인덱싱 시 이미지를 받은 뒤 바로 저장하지 않는다. 먼저 metadata preview를 생성하고, 이미 등록된 부품과 겹칠 가능성이 있으면 duplicate candidate를 보여준 뒤, 사용자가 새 모델 유지 또는 기존 모델 append를 선택하게 한다. 그 후에 OCR 및 embedding을 생성하고, 관련 collection에 upsert한다.
 
 #### 3.4.2 Search Workflow
 
@@ -130,6 +130,8 @@ catalog path는 내부 문서 근거를 제공하고, agent path는 hybrid searc
 ### 3.5 Human-in-the-Loop Boundary
 
 현재 시스템은 fully autonomous identifier가 아니다. shortlist, evidence exposure, writeback opt-in 정책을 통해 human-in-the-loop 특성을 일부 구현했으며, full accept/edit/reject workflow는 future work다.
+
+여기에 더해, 현재 인덱싱 경로는 “중복처럼 보이는 입력을 자동 폐기”하지 않는다. 실제 현장에서는 같은 부품이 나중에 더 좋은 라벨 사진, 더 풍부한 description, 추가 각도 이미지와 함께 다시 들어올 수 있기 때문이다. 그래서 현재 구현은 duplicate-looking record를 `review + merge` 문제로 다루고, interactive indexing에서는 사용자가 기존 모델 append 여부를 직접 결정하게 한다.
 
 ### 3.6 Evaluation-Oriented Design
 
@@ -148,6 +150,8 @@ evaluation strategy는 design 안에 포함된다. retrieval effectiveness, OCR 
 ### 4.2 Frontend and API Layer
 
 frontend는 search/index/chat/catalog 화면을 제공하고, API는 auth, hybrid, catalog, agent route를 제공한다.
+
+index 화면은 preview-confirm 흐름과 duplicate candidate 배너를 포함한다. 사용자는 메타 초안을 수정할 수 있고, 기존 부품으로 합칠지 새 모델로 유지할지 명시적으로 선택할 수 있다.
 
 ### 4.3 Hybrid Search Core
 

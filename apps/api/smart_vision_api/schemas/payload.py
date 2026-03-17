@@ -31,6 +31,16 @@ class HybridMetadataDraft(BaseModel):
     source: str = Field("openai", description="Metadata generation source")
 
 
+class HybridDuplicateCandidate(BaseModel):
+    model_id: str = Field(..., description="Existing model identifier")
+    maker: str = Field("", description="Existing maker metadata")
+    part_number: str = Field("", description="Existing part number metadata")
+    category: str = Field("", description="Existing category metadata")
+    description: str = Field("", description="Existing description metadata")
+    image_path: str = Field("", description="Representative stored image path")
+    reason: str = Field("", description="Human-readable reason for duplicate detection")
+
+
 class HybridIndexPreviewRequest(BaseModel):
     image_base64: Optional[str] = Field(None, description="Base64 encoded image")
     image_base64_list: List[str] = Field(default_factory=list, description="Optional list of base64 encoded images")
@@ -43,6 +53,10 @@ class HybridIndexPreviewResponse(BaseModel):
     draft: HybridMetadataDraft
     ocr_image_indices: List[int] = Field(default_factory=list, description="Image indices recommended for OCR at confirm time")
     label_ocr_text: str = Field("", description="OCR text extracted from uploaded label images")
+    duplicate_candidate: Optional[HybridDuplicateCandidate] = Field(
+        None,
+        description="Existing indexed model that appears to match the draft metadata",
+    )
 
 
 class HybridIndexConfirmRequest(BaseModel):

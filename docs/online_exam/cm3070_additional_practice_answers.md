@@ -46,6 +46,11 @@ signal, but during implementation it became clear that OCR alone was not reliabl
 erased, or highly variable labels. That pushed the project toward a more hybrid approach using VLM
 signals, body-image features, metadata, and evidence-backed ranking.
 
+Another practical change is that duplicate handling became more realistic. In a real secondhand
+workflow, a later upload of the same part may contain a cleaner label, a better side view, or richer
+text metadata. The final implementation therefore treats duplicate-looking registrations as a
+merge-and-review problem rather than as a simple duplicate-deletion problem.
+
 The same difference appears in the video aspect. A proposal video would mainly explain the concept,
 expected workflow, and intended impact. A final video, by contrast, should show the project actually
 working: for example, uploading an image, retrieving candidates, showing evidence-backed shortlist
@@ -99,7 +104,9 @@ A third ethical consideration was **safe writeback and data integrity**. If unce
 are automatically stored as trusted knowledge, the system can reinforce its own errors. In my
 project, this was addressed by making writeback opt-in by default and by treating user confirmation
 as important. This reflects the principle that uncertain outputs should not silently become permanent
-system knowledge.
+system knowledge. The same principle also shaped duplicate handling: when a new upload appears to
+match an existing part, the system prefers review and controlled merge behaviour over silent
+duplication or blind overwrite.
 
 I also took **transparency** seriously. The system is designed to show evidence, sources, and ranked
 candidates rather than only a single opaque answer. That matters ethically because users need a fair

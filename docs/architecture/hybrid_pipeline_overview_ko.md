@@ -1,5 +1,7 @@
 # Smart Vision 하이브리드 검색 파이프라인 정의서
 
+> 현재 구현 기준의 런타임 source of truth는 `README.md`, `apps/api/README.md`, `packages/model/README.md`, `apps/web/README.md`다. 이 문서는 개념 설명용 요약이며, 최신 구현에서는 preview-confirm 비동기 인덱싱, duplicate candidate review, 기존 모델 merge 정책이 추가되었다.
+
 ## 1. 프로젝트 전반 개요
 - **목표**: 반도체 중고 장비 사진과 텍스트 메타데이터를 결합한 멀티모달 검색/인덱싱 파이프라인을 제공.
 - **핵심 컴포넌트**
@@ -22,7 +24,7 @@
 | 단건 이미지 인덱싱 | `HybridSearchOrchestrator.preprocess_and_index` | 이미지 경로, `{"model_id", "maker", ...}` | 모델 ID 필수 |
 | 트래커 기반 일괄 인덱싱 | `HybridSearchOrchestrator.index_tracker_model` | `model_id`, 이미지 루트 경로 | CSV에서 메타 자동 조인 |
 | 커스텀 일괄 적재 | `HybridSearchOrchestrator.bulk_index` | `{"metadata": {...}, "images": [...]}` 배열 | `halt_on_error`로 실패 전략 제어 |
-| REST 색인 API | `POST /api/v1/hybrid/index` | 멀티파트: 이미지 + 메타 필드 | 서비스 외부 연동 |
+| REST 색인 API | `POST /api/v1/hybrid/index/preview` + `POST /api/v1/hybrid/index/confirm` | JSON(base64 이미지 + 메타 필드) | preview에서 duplicate candidate 확인 후 confirm 저장 |
 
 ## 3. 전처리 및 임베딩 단계
 ### 3.1 메타데이터 정규화
@@ -40,6 +42,9 @@
 ### 3.3 중복 관리 및 기본 키
 - 이미지 PK 패턴: `MODEL_ID::img_###`.
 - 기존 PK 충돌 시 자동 증가 index로 재할당.
+- 현재 구현에서는 동일 부품이 다시 입력될 때 `maker + part_number` 또는 `part_number` 기준으로 기존 모델을 재사용할 수 있다.
+- interactive indexing에서는 preview 단계에서 duplicate candidate를 보여주고, 사용자가 새 모델 유지 또는 기존 모델 append를 선택한다.
+- batch ingestion에서는 동일 이미지 경로를 skip하고, 새 이미지면 기존 모델에 이어 붙이며, 더 풍부한 `description`/`metadata_text`는 merge한다.
 - 이미지 사본은 `MEDIA_ROOT`(기본 `media/`) 아래 `PK.png`로 저장.
 
 ### 3.4 전처리 파이프라인 시각화

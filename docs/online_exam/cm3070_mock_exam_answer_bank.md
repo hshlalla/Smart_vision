@@ -21,6 +21,7 @@ around the exact questions that appear in `submission/pastexam/CM3070 mock exam.
   - end-to-end prototype across web, API, and model layers
   - OCR + image/text retrieval + Milvus-based search + catalog grounding
   - regression tests and latency instrumentation
+  - safer indexing flow with metadata preview and duplicate-review merge decisions
 - The main incomplete areas that should be described honestly are:
   - full aggregate OCR CER/WER reporting
   - full p50/p90/p95 latency summaries
@@ -53,6 +54,10 @@ human-in-the-loop decision-support problem**. The system accepts user images and
 extracts OCR evidence where possible, performs image and text retrieval, searches vector indexes,
 and returns a shortlist of plausible candidates with supporting evidence. A web interface, API
 layer, and model pipeline were built to support this workflow.
+
+In the final implementation, this workflow also became more careful about repeated registrations.
+If a newly uploaded part appears to match an already indexed part, the system can ask whether the
+new upload should enrich the existing model rather than silently creating a fragmented duplicate.
 
 ---
 
