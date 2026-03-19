@@ -21,6 +21,21 @@ def test_agent_chat_success_and_source_dedupe(monkeypatch):
             "output": "테스트 답변",
             "intermediate_steps": [
                 {
+                    "tool": "hybrid_search",
+                    "observation": {
+                        "good_match": True,
+                        "results": [
+                            {
+                                "model_id": "m0001",
+                                "maker": "현대",
+                                "part_number": "91200-4F310",
+                                "category": "INTERIOR_ELECTRICAL_TRIM",
+                                "images": [{"image_path": "/tmp/m0001.jpg"}],
+                            }
+                        ],
+                    },
+                },
+                {
                     "tool": "web_search",
                     "observation": [
                         {"title": "A", "url": "https://a.example", "snippet": "x"},
@@ -42,6 +57,8 @@ def test_agent_chat_success_and_source_dedupe(monkeypatch):
         {"title": "A", "url": "https://a.example"},
         {"title": "B", "url": "https://b.example"},
     ]
+    assert body["identified"]["model_id"] == "m0001"
+    assert body["search_results"][0]["model_id"] == "m0001"
 
 
 def test_agent_chat_adds_catalog_evidence_when_missing(monkeypatch):

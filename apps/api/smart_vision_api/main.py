@@ -22,6 +22,8 @@ System Features:
 - Error tracking
 """
 
+import os
+import shutil
 from pathlib import Path
 import threading
 from typing import Dict
@@ -78,8 +80,30 @@ app.include_router(
     prefix=settings.API_PREFIX,
 )
 
-media_root = Path("media").resolve()
-media_root.mkdir(parents=True, exist_ok=True)
+def _resolve_media_root() -> Path:
+    repo_root = Path(__file__).resolve().parents[3]
+    configured = os.getenv("MEDIA_ROOT")
+    media_root = Path(configured).expanduser() if configured else (repo_root / "media")
+    media_root = media_root.resolve()
+    media_root.mkdir(parents=True, exist_ok=True)
+
+    legacy_media_root = Path(__file__).resolve().parents[1] / "media"
+    if legacy_media_root != media_root and legacy_media_root.exists():
+        for legacy_file in legacy_media_root.iterdir():
+            if not legacy_file.is_file():
+                continue
+            target = media_root / legacy_file.name
+            if target.exists():
+                continue
+            try:
+                shutil.copy2(legacy_file, target)
+            except Exception:
+                logger.exception("Failed to migrate legacy media file: %s", legacy_file)
+
+    return media_root
+
+
+media_root = _resolve_media_root()
 app.mount("/media", StaticFiles(directory=str(media_root)), name="media")
 
 

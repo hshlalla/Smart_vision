@@ -70,7 +70,7 @@ function resolveMediaUrl(imagePath: string | null | undefined): string | null {
   const relative = idx >= 0 ? normalized.slice(idx + marker.length) : normalized.split("/media/").pop() || "";
   if (!relative) return null;
 
-  const apiBase = ((import.meta as any).env?.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/+$/, "");
+  const apiBase = ((import.meta as any).env?.VITE_API_BASE_URL || "").replace(/\/+$/, "");
   return `${apiBase}/media/${relative.replace(/^\/+/, "")}`;
 }
 

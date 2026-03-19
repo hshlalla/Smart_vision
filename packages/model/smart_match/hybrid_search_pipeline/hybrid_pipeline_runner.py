@@ -122,8 +122,12 @@ class HybridSearchOrchestrator:
         counters_namespace = os.getenv("COUNTERS_COLLECTION", "sv_counters")
         self.counters = MilvusCounterStore(collection_name=counters_namespace)
 
-        media_root_env = os.getenv("MEDIA_ROOT", "media")
-        self.media_root = Path(media_root_env).expanduser().resolve()
+        media_root_env = os.getenv("MEDIA_ROOT")
+        if media_root_env:
+            self.media_root = Path(media_root_env).expanduser().resolve()
+        else:
+            self.media_root = Path(__file__).resolve().parents[4] / "media"
+            self.media_root = self.media_root.resolve()
         self.media_root.mkdir(parents=True, exist_ok=True)
 
         model_extra_fields = [
@@ -1252,7 +1256,9 @@ class HybridSearchOrchestrator:
             value = float(distance)
         except (TypeError, ValueError):
             return 0.0
-        return max(0.0, 1.0 - value)
+        # Milvus returns a higher-is-better score for the COSINE metric used by
+        # image/text/model/caption collections in this project.
+        return max(0.0, min(1.0, value))
 
     def _fetch_attrs_for_hits(self, hits):
         ids = [str(hit.id) for hit in hits]

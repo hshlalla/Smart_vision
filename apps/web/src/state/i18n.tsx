@@ -69,6 +69,7 @@ const messages = {
       removeImage: "이미지 제거",
       uploadedImageAlt: "업로드 이미지",
       matchedProductAlt: "매칭된 제품",
+      searchResultsLabel: "검색된 후보",
     },
     search: {
       title: "Hybrid Search",
@@ -285,6 +286,7 @@ const messages = {
       removeImage: "Remove image",
       uploadedImageAlt: "Uploaded image",
       matchedProductAlt: "Matched product",
+      searchResultsLabel: "Matched candidates",
     },
     search: {
       title: "Hybrid Search",

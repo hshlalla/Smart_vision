@@ -161,7 +161,10 @@ class _TextOnlySearchRuntime:
             value = float(distance)
         except (TypeError, ValueError):
             return 0.0
-        return max(0.0, 1.0 - value)
+        # Milvus COSINE search returns a similarity-like score where larger is better.
+        # Our model/text collections all use COSINE, so inverting with (1 - score)
+        # incorrectly makes identical matches score near zero.
+        return max(0.0, min(1.0, value))
 
     @staticmethod
     def _normalize_part_number(value: str | None) -> str:
@@ -169,11 +172,53 @@ class _TextOnlySearchRuntime:
             return ""
         return re.sub(r"[^0-9A-Za-z]", "", str(value).upper())
 
+    @staticmethod
+    def _normalize_category_key(value: str | None) -> str:
+        if not value:
+            return ""
+        normalized = re.sub(r"[^0-9A-Za-z]+", "_", str(value).strip().upper())
+        return normalized.strip("_")
+
+    @staticmethod
+    def _normalize_text_match(value: str | None) -> str:
+        if not value:
+            return ""
+        normalized = str(value).strip().lower().replace("_", " ").replace("-", " ")
+        normalized = re.sub(r"\s+", " ", normalized)
+        return normalized
+
+    def _query_exact_category_matches(self, normalized_category_query: str, *, limit: int) -> dict[str, Dict[str, Any]]:
+        if not normalized_category_query:
+            return {}
+        safe = normalized_category_query.replace("\\", "\\\\").replace('"', '\\"')
+        rows = self.model_collection.query(
+            expr=f'category == "{safe}"',
+            output_fields=[
+                "pk",
+                "metadata_text",
+                "ocr_text",
+                "caption_text",
+                "maker",
+                "part_number",
+                "category",
+                "description",
+            ],
+            limit=limit,
+        )
+        out: dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            model_id = str(row.get("pk") or "")
+            if model_id:
+                out[model_id] = row
+        return out
+
     def search(self, *, query_text: str, top_k: int, part_number: str | None = None) -> list[Dict[str, Any]]:
         cleaned_query = (query_text or "").strip()
         if not cleaned_query:
             return []
         normalized_part_number = self._normalize_part_number(part_number)
+        normalized_category_query = self._normalize_category_key(cleaned_query)
+        normalized_query_text = self._normalize_text_match(cleaned_query)
         cache_key = hashlib.sha1(f"{cleaned_query}|{top_k}|{normalized_part_number}".encode("utf-8")).hexdigest()
         cached = self._result_cache.get(cache_key)
         if cached is not None:
@@ -205,11 +250,19 @@ class _TextOnlySearchRuntime:
         )[0]
         timings_ms["model_search"] = round((time.perf_counter() - t_search) * 1000, 2)
 
-        image_map = self._load_images_for_models([str(getattr(hit, "id", "") or "") for hit in hits])
+        exact_category_rows = self._query_exact_category_matches(
+            normalized_category_query,
+            limit=max(top_k, min(200, top_k * 10)),
+        )
+
+        candidate_model_ids = {str(getattr(hit, "id", "") or "") for hit in hits if str(getattr(hit, "id", "") or "")}
+        candidate_model_ids.update(exact_category_rows.keys())
+        image_map = self._load_images_for_models(sorted(candidate_model_ids))
 
         results: list[Dict[str, Any]] = []
         t_finalize = time.perf_counter()
         query_lower = cleaned_query.lower()
+        seen_model_ids: set[str] = set()
         query_part_number = self._normalize_part_number(cleaned_query)
         for hit in hits:
             entity = hit.entity if hasattr(hit, "entity") and hit.entity is not None else {}
@@ -222,13 +275,27 @@ class _TextOnlySearchRuntime:
             part_number = str(getter("part_number", "") or "")
             normalized_hit_part_number = self._normalize_part_number(part_number)
             category = str(getter("category", "") or "")
+            normalized_hit_category = self._normalize_category_key(category)
             description = str(getter("description", "") or "")
             aggregated_text = " ".join(part for part in [metadata_text, ocr_text, caption_text] if part).strip()
 
             similarity = self._distance_to_similarity(getattr(hit, "distance", 1.0))
             haystacks = [metadata_text, ocr_text, caption_text, aggregated_text, maker, part_number, description]
             lexical_hit = any(query_lower in (haystack or "").lower() for haystack in haystacks)
+            normalized_haystacks = [
+                self._normalize_text_match(haystack)
+                for haystack in [metadata_text, ocr_text, caption_text, aggregated_text, maker, part_number, description, category]
+            ]
+            if normalized_query_text and any(normalized_query_text and normalized_query_text in haystack for haystack in normalized_haystacks):
+                lexical_hit = True
             if query_part_number and normalized_hit_part_number and query_part_number == normalized_hit_part_number:
+                lexical_hit = True
+            exact_category_match = bool(
+                normalized_category_query
+                and normalized_hit_category
+                and normalized_category_query == normalized_hit_category
+            )
+            if exact_category_match:
                 lexical_hit = True
             lexical_score = compute_lexical_score(cleaned_query, haystacks)
             exact_field_boost = compute_exact_field_boost(
@@ -240,6 +307,8 @@ class _TextOnlySearchRuntime:
             )
             if query_part_number and normalized_hit_part_number and query_part_number == normalized_hit_part_number:
                 exact_field_boost = max(exact_field_boost, 1.0)
+            if exact_category_match:
+                exact_field_boost = max(exact_field_boost, 0.9)
             final_score = min(1.0, similarity * 0.65 + lexical_score * 0.20 + exact_field_boost * 0.15)
             if lexical_hit:
                 final_score = min(1.0, final_score + 0.08)
@@ -271,6 +340,43 @@ class _TextOnlySearchRuntime:
                     "lexical_score": lexical_score,
                     "spec_match_score": 0.0,
                     "exact_field_boost": exact_field_boost,
+                    "verified": False,
+                }
+            )
+            seen_model_ids.add(model_id)
+
+        for model_id, row in exact_category_rows.items():
+            if model_id in seen_model_ids:
+                continue
+            metadata_text = str(row.get("metadata_text") or "")
+            ocr_text = str(row.get("ocr_text") or "")
+            caption_text = str(row.get("caption_text") or "")
+            maker = str(row.get("maker") or "")
+            part_number = str(row.get("part_number") or "")
+            category = str(row.get("category") or "")
+            description = str(row.get("description") or "")
+            final_score = 0.92
+            results.append(
+                {
+                    "model_id": model_id,
+                    "score": final_score,
+                    "image_score": 0.0,
+                    "ocr_score": 0.0,
+                    "caption_score": 0.0,
+                    "text_query_score": 0.0,
+                    "maker": maker,
+                    "part_number": part_number,
+                    "category": category,
+                    "description": description,
+                    "metadata_text": metadata_text,
+                    "ocr_text": ocr_text,
+                    "caption_text": caption_text,
+                    "aggregated_text": " ".join(part for part in [metadata_text, ocr_text, caption_text] if part).strip(),
+                    "images": image_map.get(model_id, []),
+                    "lexical_hit": True,
+                    "lexical_score": 1.0,
+                    "spec_match_score": 0.0,
+                    "exact_field_boost": 0.9,
                     "verified": False,
                 }
             )

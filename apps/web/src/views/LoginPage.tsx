@@ -108,7 +108,7 @@ export default function LoginPage() {
                   </Text>
                   <Anchor
                     size="sm"
-                    href={`${import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"}/api/docs`}
+                    href={`${((import.meta as any).env?.VITE_API_BASE_URL || "").replace(/\/+$/, "")}/api/docs`}
                     target="_blank"
                     c="dimmed"
                   >

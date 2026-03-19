@@ -32,6 +32,7 @@ type ChatMsg = {
   resultImageUrl?: string;
   resultTitle?: string;
   resultSubtitle?: string;
+  resultScore?: string;
 };
 
 function formatFileSize(bytes: number) {
@@ -51,8 +52,28 @@ function resolveMediaUrl(imagePath: string | null | undefined): string | null {
   const relative = idx >= 0 ? normalized.slice(idx + marker.length) : normalized.split("/media/").pop() || "";
   if (!relative) return null;
 
-  const apiBase = ((import.meta as any).env?.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/+$/, "");
+  const apiBase = ((import.meta as any).env?.VITE_API_BASE_URL || "").replace(/\/+$/, "");
   return `${apiBase}/media/${relative.replace(/^\/+/, "")}`;
+}
+
+function buildSearchResultCard(result: any): { imageUrl?: string; title?: string; subtitle?: string; score?: string } | null {
+  if (!result || typeof result !== "object") return null;
+  const images = Array.isArray(result.images) ? result.images : [];
+  const firstImage = images[0] && typeof images[0] === "object" ? images[0] : null;
+  const imageUrl = resolveMediaUrl(firstImage?.image_path) || undefined;
+  const title = String(result.model_id || "").trim() || undefined;
+  const subtitle =
+    [result.maker, result.part_number, result.category]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean)
+      .join(" / ") || undefined;
+  let score: string | undefined;
+  if (result.score !== undefined && result.score !== null) {
+    const num = Number(result.score);
+    if (Number.isFinite(num)) score = num.toFixed(3);
+  }
+  if (!imageUrl && !title && !subtitle) return null;
+  return { imageUrl, title, subtitle, score };
 }
 
 export default function AgentChatPage() {
@@ -138,7 +159,9 @@ export default function AgentChatPage() {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (auth.token) headers.Authorization = `Bearer ${auth.token}`;
 
-      const res = await apiFetchJson<{ answer: string; debug?: any; sources?: any[]; identified?: any }>("/api/v1/agent/chat", {
+      const res = await apiFetchJson<{ answer: string; debug?: any; sources?: any[]; identified?: any; search_results?: any[] }>(
+        "/api/v1/agent/chat",
+        {
         method: "POST",
         headers,
         body: JSON.stringify({
@@ -147,7 +170,8 @@ export default function AgentChatPage() {
           max_tool_results: 5,
           update_milvus: updateMilvus,
         }),
-      });
+        },
+      );
 
       const sources = Array.isArray((res as any).sources) ? (res as any).sources : [];
       const sourcesText =
@@ -167,15 +191,21 @@ export default function AgentChatPage() {
         .map((value) => String(value || "").trim())
         .filter(Boolean)
         .join(" / ") || undefined;
+      const rawSearchResults = Array.isArray((res as any).search_results) ? (res as any).search_results : [];
+      const representativeResult =
+        buildSearchResultCard(identified) ||
+        rawSearchResults.map((item: any) => buildSearchResultCard(item)).find(Boolean) ||
+        null;
 
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
           content: (res.answer || "(empty)") + sourcesText,
-          resultImageUrl: resultImageUrl || undefined,
-          resultTitle,
-          resultSubtitle,
+          resultImageUrl: representativeResult?.imageUrl || resultImageUrl || undefined,
+          resultTitle: representativeResult?.title || resultTitle,
+          resultSubtitle: representativeResult?.subtitle || resultSubtitle,
+          resultScore: representativeResult?.score,
         },
       ]);
       setImageFile(null);
@@ -266,6 +296,7 @@ export default function AgentChatPage() {
                               {m.resultSubtitle}
                             </Text>
                           ) : null}
+                          {m.resultScore ? <Badge variant="light">{t("search.scoreBadge", { score: m.resultScore })}</Badge> : null}
                         </Stack>
                       ) : null}
                     </Stack>

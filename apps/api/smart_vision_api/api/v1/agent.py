@@ -58,6 +58,32 @@ def _extract_identified(debug: dict) -> dict:
     return best
 
 
+def _extract_search_results(debug: dict, *, limit: int = 5) -> list[dict]:
+    steps = debug.get("intermediate_steps") or []
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        if step.get("tool") != "hybrid_search":
+            continue
+        obs = step.get("observation")
+        if not isinstance(obs, dict):
+            continue
+        results = obs.get("results")
+        if not isinstance(results, list):
+            continue
+        out: list[dict] = []
+        for row in results:
+            if not isinstance(row, dict):
+                continue
+            if "model_id" not in row:
+                continue
+            out.append(row)
+            if len(out) >= limit:
+                break
+        return out
+    return []
+
+
 def _extract_catalog_refs(debug: dict) -> list[dict[str, str]]:
     refs: list[dict[str, str]] = []
     steps = debug.get("intermediate_steps") or []
@@ -140,10 +166,12 @@ async def chat(
                 )
                 answer = f"{answer}\n\nCatalog Evidence:\n{evidence_lines}".strip()
         identified = _extract_identified(debug)
+        search_results = _extract_search_results(debug, limit=min(5, request.max_tool_results))
         return AgentChatResponse(
             answer=answer or "답변을 생성하지 못했습니다.",
             sources=sources,
             identified=identified,
+            search_results=search_results,
             debug=debug,
         )
     except HTTPException:

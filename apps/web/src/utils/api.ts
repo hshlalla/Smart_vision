@@ -1,4 +1,4 @@
-const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || "http://localhost:8000";
+const API_BASE_URL = ((import.meta as any).env?.VITE_API_BASE_URL || "").replace(/\/+$/, "");
 const DEFAULT_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const DEFAULT_MAX_DIMENSION = 1600;
 

@@ -120,7 +120,7 @@ export default function AppShellLayout() {
 
         <AppShell.Section p="xs">
           <Text size="xs" c="dimmed">
-            {t("common.api")}: {import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"}
+            {t("common.api")}: {((import.meta as any).env?.VITE_API_BASE_URL || "(proxy:/api)").toString()}
           </Text>
         </AppShell.Section>
       </AppShell.Navbar>
