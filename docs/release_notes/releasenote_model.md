@@ -7,6 +7,7 @@ Smart Vision Model Release Notes
 - 경량 text-only retrieval runtime을 추가했습니다.
 - request 단위 reranker on/off override를 지원하도록 검색 경로를 확장했습니다.
 - Apple Silicon `mps` 디바이스 선택을 PyTorch 기반 런타임에 반영했습니다.
+- 실험용 별도 Milvus 컬렉션을 사용할 수 있도록 unified JSONL 인입 스크립트에 collection override 옵션을 추가했습니다.
 
 ### Changed
 - `model_id` 카운터 저장소를 Milvus 컬렉션에서 SQLite로 전환했습니다.
@@ -16,11 +17,13 @@ Smart Vision Model Release Notes
 - 대량 인입 시 기존 벡터 인덱스를 매번 다시 생성하지 않도록 조정해 재인덱싱 startup 정체를 줄였습니다.
 - unified JSONL 인입은 동일 부품이 다른 `model_id`로 다시 들어와도 기존 모델에 merge 할 수 있도록 `maker + part_number` / `part_number` 기반 dedup 경로를 사용합니다.
 - 중복으로 판단된 후속 입력은 skip만 하지 않고, 더 풍부한 `description`/`metadata_text`를 기존 모델 텍스트에 병합하도록 정리했습니다.
+- `Qwen3-VL-Reranker-2B` 로딩 경로를 공식 `Qwen3VLForConditionalGeneration` 기반으로 정리하고, 현재 Apple Silicon 환경에서 필요 시 `RERANKER_DEVICE=cpu` fallback을 사용할 수 있게 했습니다.
 
 ### Fixed
 - text-only 검색 경로가 attrs 이미지 정보를 함께 반환하지 않던 문제를 수정했습니다.
 - part number exact match에서 공백/하이픈 차이에 덜 민감하도록 정규화 매칭을 보강했습니다.
 - 기존 Milvus 인덱스가 이미 존재하는 상황에서 `create_index()` 재호출 대기로 인입이 멈추던 문제를 수정했습니다.
+- 기존 reranker 초기화가 잘못된 아키텍처 로더를 사용하던 문제를 수정했습니다.
 
 ## 2.3.0
 

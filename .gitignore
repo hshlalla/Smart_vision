@@ -78,3 +78,6 @@ models/
 
 # ---------- Misc ----------
 *.xlsx
+
+# ---------- Experiment outputs ----------
+/experiments/runs/

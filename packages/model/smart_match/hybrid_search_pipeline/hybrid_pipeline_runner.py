@@ -264,7 +264,12 @@ class HybridSearchOrchestrator:
             logger.info("Reranker disabled by local configuration/default.")
             return None
         try:
-            return Qwen3VLReranker()
+            max_length_raw = (os.getenv("RERANKER_MAX_LENGTH") or "").strip()
+            max_length = int(max_length_raw) if max_length_raw.isdigit() else 2048
+            return Qwen3VLReranker(
+                device=os.getenv("RERANKER_DEVICE") or None,
+                max_length=max_length,
+            )
         except Exception:
             logger.exception("Failed to initialize Qwen3-VL reranker; continuing without reranking.")
             return None
@@ -938,11 +943,12 @@ class HybridSearchOrchestrator:
         top_k: int = 10,
         part_number: Optional[str] = None,
         use_reranker: Optional[bool] = None,
+        return_timings: bool = False,
     ):
         """Execute hybrid search using provided image and/or text query."""
         if not query_image and not query_text:
             logger.warning("Search invoked without query_image or query_text.")
-            return []
+            return ([], {}) if return_timings else []
 
         t_start = time.perf_counter()
         timings_ms: Dict[str, float] = {}
@@ -1071,7 +1077,7 @@ class HybridSearchOrchestrator:
                 bool(query_text),
                 timings_ms,
             )
-            return []
+            return ([], timings_ms) if return_timings else []
 
         model_ids = list(model_scores.keys())
         t_fetch_models = time.perf_counter()
@@ -1237,7 +1243,10 @@ class HybridSearchOrchestrator:
             len(results[:top_k]),
             timings_ms,
         )
-        return results[:top_k]
+        final_results = results[:top_k]
+        if return_timings:
+            return final_results, timings_ms
+        return final_results
 
     @staticmethod
     def _pad_scores(scores, target_len):

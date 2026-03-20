@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 
-ROOT = Path("/Users/mac/project/Smart_vision")
+ROOT = Path(__file__).resolve().parents[2]
 BASE_DIR = ROOT / "data" / "datasets" / "unified_v1"
 OUT_DIR = BASE_DIR / "eval_v1"
 
@@ -102,4 +102,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -215,6 +215,8 @@ Recommended caption policy:
 ### Search Quality / Performance
 
 - `ENABLE_RERANKER`
+- `RERANKER_DEVICE`
+- `RERANKER_MAX_LENGTH`
 - `WARMUP_QWEN_PREVIEW_ON_STARTUP`
 - collection names:
   - `HYBRID_IMAGE_COLLECTION`
@@ -232,6 +234,8 @@ Recommended caption policy:
   - text-only fast path on
   - reranker off by default
   - GPT metadata preview for quality, or Qwen for local-only comparison
+- The multimodal reranker is now wired to the official Qwen loading path, but this machine can still require `RERANKER_DEVICE=cpu` because `mps` may crash during real reranker scoring.
+- If reranker is forced onto `cpu`, expect query latency to increase sharply.
 - If OCR env flags are disabled, label OCR uploads from the UI are also bypassed at runtime.
 
 ## Stored Metadata

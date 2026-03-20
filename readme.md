@@ -40,6 +40,9 @@ Smart_vision/
 - OCR
   - Controlled by env flags.
   - Current local experiments often keep OCR disabled because Apple Silicon runs it slowly and inconsistently for this workload.
+- Reranker
+  - `Qwen3-VL-Reranker-2B` is wired into the search stack.
+  - On the current Apple Silicon machine, stable reranker execution may require `RERANKER_DEVICE=cpu` because this model can fail on `mps` during real scoring.
 
 ## Recommended Local Setup
 
@@ -106,11 +109,15 @@ See [apps/api/README.md](/Users/studio/Downloads/project/Smart_vision/apps/api/R
 - `METADATA_PREVIEW_BACKEND`
 - `CAPTIONER_BACKEND`
 - `ENABLE_RERANKER`
+- `RERANKER_DEVICE`
+- `RERANKER_MAX_LENGTH`
 - `WARMUP_QWEN_PREVIEW_ON_STARTUP`
 
 ## Notes
 
 - Apple Silicon support is implemented through `cuda -> mps -> cpu` device selection for PyTorch paths.
+- For the current local machine, the multimodal reranker is functional but can still require a `cpu` fallback path and high latency should be expected.
 - The project now uses SQLite for `model_id` counters instead of a Milvus counter collection.
 - Text-only search was separated from the heavy multimodal runtime to reduce latency and memory pressure.
 - Duplicate-looking records are treated as a `review + merge` problem rather than a pure duplicate-drop problem, because later uploads may contain richer images or metadata.
+- Reproducible evaluation runners live under [`experiments/`](/Users/studio/Downloads/project/Smart_vision/experiments), and the latest local experiment caveats are tracked in [`CURRENT_EXPERIMENT_STATUS.md`](/Users/studio/Downloads/project/Smart_vision/experiments/CURRENT_EXPERIMENT_STATUS.md).

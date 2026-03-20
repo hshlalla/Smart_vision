@@ -84,6 +84,8 @@ print(results)
 - `ENABLE_OCR_INDEXING`
 - `ENABLE_OCR_QUERY`
 - `ENABLE_RERANKER`
+- `RERANKER_DEVICE`
+- `RERANKER_MAX_LENGTH`
 - `CAPTIONER_BACKEND`
 - `LOCAL_MODE`
 - `HYBRID_IMAGE_COLLECTION`
@@ -96,10 +98,12 @@ print(results)
 
 - Text-only retrieval should use the lightweight path whenever possible.
 - Apple Silicon local experiments are viable, but not CUDA-class for heavy multimodal indexing.
+- The Qwen multimodal reranker now uses the official `Qwen3VLForConditionalGeneration` loading path, but on the current Apple Silicon machine it may still need `RERANKER_DEVICE=cpu` because `mps` can fail during scoring.
 - The main local bottlenecks are usually:
   - first model load
   - image embedding
   - Milvus insert/flush
+  - reranker scoring when enabled on `cpu`
 - Current preprocessing stores a resized image copy for embedding/media, while preserving the larger source image path for operations that need higher fidelity.
 - Practical caption policy in this repo:
   - hosted/default mode: `CAPTIONER_BACKEND=gpt`

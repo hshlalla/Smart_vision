@@ -14,6 +14,11 @@
 - `release_notes/`
   - 앱/API/모델 릴리즈 노트
 
+Related evaluation runners and experiment status notes live outside `docs/` under:
+
+- `experiments/`
+  - 재현 가능한 평가 러너, 현재 실험 상태 메모, 로컬 실험용 안내
+
 ## Runtime Source Of Truth
 
 현재 구현 동작을 설명할 때는 아래 문서를 우선 기준으로 본다.
@@ -22,9 +27,11 @@
 - `apps/api/README.md`
 - `packages/model/README.md`
 - `apps/web/README.md`
+- `experiments/CURRENT_EXPERIMENT_STATUS.md` for the latest local evaluation caveats and incomplete/long-running experiment notes
 
 `docs/reports/*`는 제출용 작업 문서이므로 런타임 설명의 1차 기준으로 쓰지 않는다.
 중복 재등록, preview-confirm 인덱싱, merge 정책처럼 실제 동작에 직접 영향을 주는 내용도 위 README 계층을 우선 기준으로 본다.
+실험 설계가 실제 로컬 하드웨어 제약 때문에 조정되었는지, 어떤 평가가 아직 long-running/incomplete 상태인지 확인할 때는 `experiments/CURRENT_EXPERIMENT_STATUS.md`를 함께 본다.
 
 ## Historical Reference Boundary
 

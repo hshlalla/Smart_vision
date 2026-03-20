@@ -248,6 +248,11 @@ def run_unified_ingestion(
     dataset_path: Path,
     repo_root: Path,
     milvus_uri: str,
+    image_collection: str = "qwen3_vl_image_parts",
+    text_collection: str = "bge_m3_text_parts",
+    attrs_collection: str = "attrs_parts_v2",
+    model_collection: str = "bge_m3_model_texts",
+    caption_collection: str = "bge_m3_caption_parts",
     split: str | None = None,
     domain: str | None = None,
     limit: int | None = None,
@@ -255,6 +260,11 @@ def run_unified_ingestion(
 ) -> dict[str, Any]:
     orchestrator = None if dry_run else HybridSearchOrchestrator(
         milvus=MilvusConnectionConfig(uri=milvus_uri),
+        image_collection=image_collection,
+        text_collection=text_collection,
+        attrs_collection=attrs_collection,
+        model_collection=model_collection,
+        caption_collection=caption_collection,
         load_vector_collections=False,
         load_metadata_collections=True,
     )
@@ -388,6 +398,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset", type=Path, default=Path("data/datasets/unified_v1/unified_all.jsonl"))
     parser.add_argument("--repo-root", type=Path, default=Path.cwd())
     parser.add_argument("--milvus-uri", default="tcp://localhost:19530")
+    parser.add_argument("--image-collection", default="qwen3_vl_image_parts")
+    parser.add_argument("--text-collection", default="bge_m3_text_parts")
+    parser.add_argument("--attrs-collection", default="attrs_parts_v2")
+    parser.add_argument("--model-collection", default="bge_m3_model_texts")
+    parser.add_argument("--caption-collection", default="bge_m3_caption_parts")
     parser.add_argument("--split", default="", help="Optional split filter, e.g. train or test")
     parser.add_argument("--domain", default="", help="Optional domain filter, e.g. auto_part")
     parser.add_argument("--limit", type=int, default=0, help="Optional max number of items to ingest")
@@ -403,6 +418,11 @@ def main() -> None:
         dataset_path=args.dataset,
         repo_root=args.repo_root.resolve(),
         milvus_uri=args.milvus_uri,
+        image_collection=args.image_collection,
+        text_collection=args.text_collection,
+        attrs_collection=args.attrs_collection,
+        model_collection=args.model_collection,
+        caption_collection=args.caption_collection,
         split=(args.split or "").strip() or None,
         domain=(args.domain or "").strip() or None,
         limit=args.limit or None,

@@ -12,6 +12,7 @@ Smart Vision API Release Notes
 - Index UI에 `기존 모델에 추가 / 새 모델로 유지` 선택 UX를 추가했습니다.
 - agent chat 응답에 내부 매칭 이미지가 프런트에서 표시되도록 UI 연동을 보강했습니다.
 - Search UI에 reranker on/off 토글을 추가했습니다.
+- 실험은 웹 UI 없이 재현 가능한 runner 기준으로도 수행할 수 있도록 `experiments/` 문서를 정리했습니다.
 
 ### Changed
 - 텍스트-only 질의는 경량 `BGE-M3 + model collection` 경로로 분리했습니다.
@@ -20,6 +21,7 @@ Smart Vision API Release Notes
 - `model_id` 카운터 저장소를 Milvus 컬렉션에서 SQLite로 변경했습니다.
 - 에이전트의 part number 질의는 정규화(`91200 4F310 == 91200-4F310`) 후 내부 검색을 우선 사용합니다.
 - 중복 부품 재등록 시 현장 사용성을 고려해, preview 단계에서 먼저 사용자 확인을 요청하고 confirm 시 기존 `model_id`에 append 할 수 있게 했습니다.
+- 현재 Apple Silicon 로컬 환경에서는 multimodal reranker가 `RERANKER_DEVICE=cpu` fallback을 필요로 할 수 있다는 운영 메모를 README 계층과 실험 상태 문서에 반영했습니다.
 
 ### Fixed
 - text-only fast path 검색 결과에 이미지가 비어 있던 문제를 수정했습니다.
