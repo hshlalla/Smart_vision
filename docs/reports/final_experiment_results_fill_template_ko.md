@@ -15,7 +15,7 @@
 
 이 문서에서는 각 실험마다 아래 5가지를 반드시 채운다.
 
-1. **실행 여부**: completed / partial / prepared / planned
+1. **실행 여부**: completed / partial evidence / in progress / prepared / instrumented / protocol defined / planned
 2. **입력 데이터**: 무엇을 대상으로 돌렸는지
 3. **실행 조건**: 모델/설정/환경/반복 횟수
 4. **결과 수치**: 표 또는 bullet
@@ -23,8 +23,11 @@
 
 중요:
 - 숫자와 artifact가 없으면 `completed`로 쓰지 않는다.
+- `partial evidence`는 일부 실행 결과가 있지만 full controlled study는 아직 아니라는 뜻이다.
+- `in progress`는 pilot나 부분 실행은 있었지만 aggregate 결과가 아직 정리되지 않았다는 뜻이다.
 - `prepared`는 입력 데이터와 manifest가 준비된 상태를 뜻한다.
 - `instrumented`는 로그 수집은 되지만 summary 수치는 아직 없는 상태를 뜻한다.
+- `protocol defined`는 문항/절차는 확정됐지만 실제 결과는 아직 없다는 뜻이다.
 - 최종보고서에는 `completed result`와 `planned study`를 반드시 분리해서 쓴다.
 
 ---
@@ -85,6 +88,9 @@
 - short README explaining what was run
 
 ---
+주의: `experiments/runs/...` 원본은 실행 머신의 local-output 성격이라 git에 항상 포함되지는 않을 수 있다. 보고서에는 raw path 대신 요약 표, JSON/CSV export, `submission/evidence/` 복사본을 남기는 것을 우선한다.
+
+---
 
 ## 2. Final Report Evaluation Summary Table
 
@@ -92,11 +98,12 @@
 
 | Area | Experiment ID | Current status | Main metric | Result summary | Safe wording for report |
 |---|---|---|---|---|---|
-| Retrieval effectiveness | E1 / B0 |  | Accuracy@1, Accuracy@5 |  | completed earlier / completed / prepared |
-| OCR robustness | E2 |  | CER, exact match |  | protocol defined / completed |
-| Latency / interactivity | E3 |  | p50/p90/p95 latency |  | instrumented / completed |
-| User usefulness | E4 |  | task time, trust score |  | pilot protocol defined / completed |
-| Engineering reliability | E5 |  | pytest pass, safety checks |  | completed |
+| End-to-end workflow | E0 | completed | scenario success | current-index suite `8/8` scenario success | completed |
+| Retrieval effectiveness | E1 / B0 | partial evidence / completed earlier | Accuracy@1, Hit@5, MRR, item_id@1 | current-index sanity + sampled `C3` baseline available; full controlled comparison pending | completed earlier / partial evidence |
+| OCR robustness | E2 | in progress | CER, exact match | OCR pilot attempted, aggregate result pending | in progress |
+| Latency / interactivity | E3 | partial evidence | mean, p50/p90/p95 latency | warm mean observations available; percentile summary pending | partial evidence |
+| User usefulness | E4 | protocol defined | task time, trust score | pilot form/protocol defined; aggregate result pending | pilot protocol defined |
+| Engineering reliability | E5 | completed | pytest pass, safety checks | regression tests, frontend build, eval input generation available | completed |
 
 ---
 
@@ -111,6 +118,18 @@
 
 - `A working end-to-end prototype exists.`
 - `The prototype supports indexing, retrieval, evidence display, and follow-up interaction.`
+
+### 3.2.1 Current Known Evidence
+
+현재 확인된 실행 근거:
+
+- source: `experiments/CURRENT_EXPERIMENT_STATUS.md`
+- current-index suite 기준 `8/8` scenario success
+- 이 결과는 end-to-end operational sanity evidence로 바로 사용 가능하다
+
+최종보고서에서는 아래처럼 쓰면 안전하다.
+
+> Operational end-to-end scenario validation showed `8/8` successful flows on the current indexed stack, supporting the claim that the prototype works across upload, indexing, retrieval, and evidence display.
 
 ### 3.3 Input / Scenario Definition
 
@@ -188,6 +207,25 @@ Use this if only implementation evidence exists:
 
 - `Hybrid retrieval improves shortlist usefulness over weaker baselines.`
 - `The chosen configuration is justified by measured retrieval quality rather than by model preference alone.`
+
+### 4.2.1 Current Known Evidence
+
+현재 이미 확보된 근거는 아래와 같다.
+
+1. current-index sanity benchmark
+- `Accuracy@1 = 0.9732`
+- `Hit@5 = 1.0`
+- `MRR = 0.9855`
+- 주의: 이는 deployed collection 기준 operational sanity evidence이며 strict generalisation benchmark로 단정하면 안 된다.
+
+2. sampled holdout baseline (`C3`)
+- `30` sampled items
+- `1` held-out query image per item
+- `OCR off`, `reranker off`
+- group `Hit@1 = 1.0`, group `Hit@5 = 1.0`, `MRR = 1.0`
+- exact `item_id@1 = 0.9667`
+
+따라서 현재 상태는 “실험 미실행”이 아니라 “baseline / sanity evidence는 있고, full controlled comparison이 남아 있음”으로 정리해야 한다.
 
 ### 4.3 Input Definition
 
@@ -349,6 +387,18 @@ If not completed:
 
 - `The system has latency instrumentation at the component level.`
 - `Interactive feasibility can be analysed with percentile metrics.`
+
+### 6.2.1 Current Known Evidence
+
+현재 확인된 warm-latency observation은 아래와 같다.
+
+- current-index suite warm total mean: 약 `653.65 ms`
+- sampled `C3` baseline warm total mean: 약 `731.13 ms`
+- sampled `C3` warm mean preprocessing: 약 `698.96 ms`
+- sampled `C3` warm mean text search: 약 `20.39 ms`
+- sampled `C3` warm mean image search: 약 `3.72 ms`
+
+이 수치는 percentile study를 대체하지는 않지만, 현재 병목이 query-side preprocessing/embedding에 있다는 정성적 결론을 뒷받침한다.
 
 ### 6.3 Input Definition
 

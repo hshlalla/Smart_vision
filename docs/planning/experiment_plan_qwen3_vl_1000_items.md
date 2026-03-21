@@ -35,6 +35,20 @@
 
 ---
 
+## 0.2 Current Execution Status (2026-03-21)
+
+이 문서는 원래 full 1000-item study 계획서지만, 현재 코드베이스에는 이미 `experiments/` 폴더 기반의 재현 러너와 상태 요약이 존재한다. 따라서 아래를 현재 baseline execution status로 함께 본다.
+
+- current-index suite에서 `E0` 시나리오 `8/8` 성공
+- current-index sanity benchmark에서 `Accuracy@1=0.9732`, `Hit@5=1.0`, `MRR=0.9855` 관찰
+- sampled holdout `C3` baseline에서 exact `item_id@1=0.9667`, group `Hit@1=1.0`, `MRR=1.0` 관찰
+- warm latency observation은 current-index 약 `653.65 ms`, sampled `C3` 약 `731.13 ms`
+- `E5` reliability refresh는 usable evidence 상태
+
+다만 이 수치들은 full 1000-item controlled final study를 완전히 대체하지 않는다. current-index run은 operational sanity evidence로만 사용해야 하고, sampled `C3` baseline은 stronger controlled evidence이지만 아직 `C1/C2/C3/C4` 전체 비교가 끝난 것은 아니다.
+
+또한 `experiments/runs/` raw output은 실행 머신의 local-output 성격이라 git에 항상 포함되지는 않는다. 따라서 본 계획서는 run artifact 경로 자체보다 `experiments/CURRENT_EXPERIMENT_STATUS.md`와 제출용 evidence 폴더로 요약을 보존하는 방식을 전제로 한다.
+
 ## 1. Dataset Design
 
 ### 1.1 Dataset Size
@@ -108,10 +122,11 @@
 
 ### Important Note on Current Code State
 
-- 현재 코드베이스 기본 동작은 사실상 `OCR enabled baseline`에 가깝다.
-- 따라서 공정한 `C1` vs `C2` 비교를 위해서는 OCR on/off 스위치를 먼저 구현해야 한다.
+- OCR on/off 토글과 reranker on/off 토글은 현재 코드와 실험 러너에 이미 구현되어 있다.
+- 따라서 남은 이슈는 “기능 구현”이 아니라, 공정한 `C1` vs `C2` 비교를 위해 서로 독립된 컬렉션과 고정된 manifest를 유지하는 것이다.
 - 특히 `C1`은 query-time OCR만 끄는 것으로 충분하지 않고, OCR 없이 별도 컬렉션에 다시 인덱싱해야 한다.
 - 즉 `exp_c1_*`와 `exp_c2_*`는 서로 독립적으로 구축해야 한다.
+- full controlled final comparison의 남은 병목은 feature availability보다 local hardware 상의 runtime throughput과 결과 요약 정리다.
 
 ---
 
@@ -444,25 +459,18 @@ shortlist + evidence 기반 assisted workflow는 완전 수동 검색보다 task
 
 ---
 
-## 10. Implementation Work Needed Before Running
+## 10. Remaining Work Before Full Final Run
 
-- OCR on/off 스위치 구현 (`index-time`, `query-time`)
-- config별 Milvus collection naming 분리
-- evaluation runner script 작성
-- OCR benchmark ground-truth schema 정의
-- latency aggregation script 작성
-- human-review pilot task sheet 작성
-- safety/writeback smoke test checklist 작성
-- result logging schema 정의
-- metadata freeze CSV 작성
-- test set 100개 ground-truth 검증
-
----
+1. sync local `experiments/runs/...` outputs into report-facing evidence summaries or `submission/evidence/`
+2. finish the controlled sampled/full retrieval comparison across `C1/C2/C3/C4` under separated collections
+3. stabilise reranker-on runtime on the available hardware, or document a narrower subset/protocol if full runtime remains prohibitive
+4. finalise OCR ground-truth subset and aggregate CER / exact-match reporting
+5. generate latency batch summaries (`mean`, `p50`, `p90`, `p95`) from structured timing logs
+6. collect and summarise human-review pilot outcomes
+7. freeze metadata / manifest / held-out GT so that final report claims point to a stable snapshot
 
 ## 11. Immediate Next Step
 
-가장 먼저 할 일은 아래 세 가지다.
-
-1. OCR on/off와 config별 컬렉션 분리를 먼저 구현한다.
-2. 실험용 1000개 데이터셋 메타 CSV와 identifier subset 정답을 고정한다.
-3. retrieval / OCR / latency / human-review 평가 스크립트 요구사항을 별도 작업 항목으로 분해한다.
+1. consolidate already executed local experiment outputs into a submission-safe evidence summary
+2. complete the highest-value controlled comparison still missing (`C1` vs `C3`, then `C2/C4` as feasible)
+3. close the remaining reporting gaps for OCR aggregate results, latency percentiles, and human-review pilot results

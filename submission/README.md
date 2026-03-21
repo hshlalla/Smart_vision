@@ -37,3 +37,4 @@
 3. `guides/final_report_guide.md`와 rubric에 맞춰 장 구조를 최종 조정
 4. `evidence/report_support_2026-03-10/`의 테스트/환경/변경 요약을 근거로 Evaluation/Implementation 내용을 보강
 5. 작업 중인 상태 정리는 `docs/reports/final_report_status.md`에서 추적
+6. 제출 직전 우선순위와 고득점 전략은 `docs/reports/final_submission_strategy_ko.md`를 참고
