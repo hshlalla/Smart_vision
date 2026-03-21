@@ -33,7 +33,7 @@ The remainder of this report is organised as follows. Chapter 2 reviews prior wo
 
 ## 2. Literature Review
 
-Visual retrieval has a long history in computer vision, moving from handcrafted descriptors toward deep feature embeddings that support large-scale semantic search. Consumer systems such as eBay image search demonstrate that image-based retrieval can reduce friction when users do not know the right keywords [2]. Google Lens and similar tools generalise this pattern by allowing users to search from photos across many object types [8]. These systems are relevant because they show that image-based queries can be practical at scale. However, their main successes concern whole consumer products rather than fine-grained parts with subtle inter-class variation.
+Visual retrieval has a long history in computer vision, moving from handcrafted descriptors toward deep feature embeddings that support large-scale semantic search [22]. Consumer systems such as eBay image search demonstrate that image-based retrieval can reduce friction when users do not know the right keywords [2, 23]. Google Lens and similar tools generalise this pattern by allowing users to search from photos across many object types [8]. These systems are relevant because they show that image-based queries can be practical at scale. However, their main successes concern whole consumer products rather than fine-grained parts with subtle inter-class variation.
 
 Industrial and part-specific literature is therefore more directly relevant. Li and Chen show that industrial machine parts can be recognised using transfer learning on a curated dataset [10], but that approach assumes a closed set of categories and enough labelled examples per class. This is a poor match for secondhand marketplaces, where long-tail inventory changes continuously. Retrieval-based industrial work is closer to the current problem because it allows the system to search among indexed items without retraining. Yet even retrieval-oriented studies often assume more homogeneous datasets than real marketplace imagery provides [11]. The literature therefore supports the use of deep visual embeddings, but it also suggests that vision-only approaches face clear limits in open-world, fine-grained settings.
 
@@ -53,9 +53,50 @@ Taken together, the literature suggests that no single technique is sufficient. 
 
 The design follows directly from the requirements and literature. The system is intentionally retrieval-first, multimodal, and evidence-oriented. Its purpose is not to produce one unqualified label, but to help a user narrow the candidate space and inspect enough supporting information to make a reliable decision.
 
+### 3.1 Domain and User Requirements
+
+The system's design is heavily informed by specific domain constraints and user needs within secondhand platform workflows. From the domain perspective, secondhand part inventories are open-world and long-tailed: new, rare, and discontinued items appear continuously, making fixed closed-set classification a poor fit [10, 21]. The domain is also highly fine-grained; parts often differ only by small identifiers rather than overall shape [4, 10, 24]. Marketplace images are notoriously noisy and uncontrolled, necessitating a system that treats OCR as probabilistic rather than absolute ground truth [25].
+
+Furthermore, user requirements gathered through an elicitation survey of six secondhand platform participants indicated a strong preference for photo-based assistance over manually querying part numbers. However, users expressed a need for transparency and verifiability rather than blind trust in automated AI systems [26]. These insights, supported by prior literature on trust in human-AI interaction [27], strictly require a shortlist-based architecture where users retain the final decision-making power.
+
+[Insert Table 1-1 here: Summary of survey findings and requirement implications.]
+
+### 3.2 System Architecture
+
 The design is guided by five core goals. First, the system must support open-world identification, so retrieval is favoured over closed-set classification. Second, it must handle fine-grained ambiguity by combining multiple modalities rather than trusting visual similarity alone. Third, it must degrade gracefully when some evidence is missing or noisy. Fourth, it must produce outputs that are directly usable in listing workflows. Fifth, it must be instrumented so that evaluation is traceable and tied to the system's intended use.
 
-[Insert Figure 3-1 here: Overall system architecture.]
+```mermaid
+flowchart TD
+  U[1. User] --> W[2. apps/web]
+  W -->|JWT + JSON/FormData| API[3. apps/api FastAPI]
+
+  API --> R1[3-1. Hybrid API]
+  API --> R2[3-2. Catalog API]
+  API --> R3[3-3. Agent API]
+
+  R1 --> M[4. packages/model smart_match]
+  R3 --> M
+  R2 --> C[4-2. Catalog Service]
+
+  subgraph MODEL["Model Core"]
+    M --> P[Preprocessing]
+    P --> O[OCR]
+    P --> VI[Image Embedding BGE-VL]
+    P --> VT[Text Embedding BGE-M3]
+    P --> CAP[Captioning Optional]
+    M --> F[Fusion + lexical/spec scoring]
+  end
+
+  F --> DB[(5. Milvus Collections)]
+  C --> DB
+  DB --> API
+  API --> W
+  W --> U
+
+  R3 --> EXT1[OpenAI Optional]
+  R3 --> EXT2[Web/gparts Optional]
+```
+*Figure 3-1: Overall system architecture.*
 
 At the highest level, the architecture is divided into a user-facing interaction layer, an orchestration layer, a perception and representation layer, and a retrieval and knowledge layer. The primary user-facing path is a React web application backed by a FastAPI service. This corrects an ambiguity in earlier drafts: Gradio is retained as a developer-facing demo and debugging interface, but it is not the main final user interface. Behind the UI, a hybrid-search orchestrator coordinates OCR, embedding generation, vector search, score fusion, and result normalisation. The perception layer includes OCR, image embeddings, text embeddings, and optional caption generation. The retrieval layer includes Milvus collections for several modalities as well as a separate index for internal catalog documents.
 
@@ -67,19 +108,53 @@ The indexing workflow is straightforward but important. A user or operator provi
 
 The main query-time workflow begins with a user-provided image, optional text, and optional part-number hints. If an image is present, the system runs OCR and makes the extracted text available as part of the evidence trail. Image embeddings are then generated, and text embeddings are produced from OCR text, user text, or both when possible. Multiple searches are issued against the relevant Milvus collections. Candidates are then merged by `model_id`, rather than treated as independent image hits, because the final decision concerns the part or model rather than a single stored image. The result is a Top-K shortlist together with a listing-oriented summary and score decomposition.
 
-[Insert Figure 3-2 here: Query-time hybrid search and evidence fusion flow.]
+```mermaid
+flowchart TD
+  INI[Index request image+metadata] --> ORCH[HybridSearchOrchestrator]
+  INS[Search request image/text] --> ORCH
+
+  ORCH --> NORM[MetadataNormalizer]
+  ORCH --> OCR[OCR Pipeline]
+  ORCH --> IMG[BGEVLImageEncoder]
+  ORCH --> TXT[BGEM3TextEncoder]
+  ORCH --> CAP[Captioner Optional]
+
+  NORM --> IDX[HybridMilvusIndex]
+  OCR --> IDX
+  IMG --> IDX
+  TXT --> IDX
+  CAP --> IDX
+
+  IDX --> COL[(image_parts/text_parts/attrs_parts/model_texts/caption_parts)]
+  ORCH --> CNT[MilvusCounterStore]
+  CNT --> COL
+
+  COL --> SCORE[Dense score image/ocr/caption/text]
+  ORCH --> LEX[Lexical score]
+  ORCH --> SPEC[Spec match score]
+
+  SCORE --> FINAL[Final score blend]
+  LEX --> FINAL
+  SPEC --> FINAL
+  FINAL --> OUT[Top-K models + metadata + image list]
+```
+*Figure 3-2: Query-time hybrid search and evidence fusion flow.*
 
 The ranking logic is explicitly designed to handle uncertainty. First, a dense score is computed over whichever channels are actually available. Second, that dense score is blended with lexical and specification-oriented signals such as substring hits, part-number agreement, or attribute-token matches. This two-stage approach reflects the reality of the task. Image similarity may be strong but ambiguous; text may be decisive but noisy. The system therefore attempts to use both, while retaining enough intermediate scores to explain how a candidate was ranked.
 
 The design also extends beyond raw search. A separate catalog-retrieval path allows internal PDFs and technical manuals to be indexed as chunked text so that the system can return source- and page-grounded evidence when internal documentation exists. On top of this, an agent layer can orchestrate tools such as hybrid search, catalog search, web search, and price extraction. This does not replace the core retrieval engine. Instead, it wraps that engine in a broader workflow suitable for user questions that require supporting evidence from multiple sources.
 
-[Insert Figure 3-3 here: Agent and catalog orchestration path.]
+![Figure 3-3: Agent and catalog orchestration path.](../images/fig_catalog_ui.png)
 
 Human review is a central design principle, but it needs to be stated precisely. In the current system, human-in-the-loop behaviour is implemented partly through the shortlist itself, partly through the exposure of OCR and score evidence, and partly through safe writeback defaults. During the final validation pass, the default agent behaviour for Milvus writeback was changed so that updates are disabled unless explicitly enabled by the operator. This is an important design correction because it recognises that uncertain identification results should not automatically become new knowledge. At the same time, a full production-grade `accept / edit / reject` flow with audit logging across the main search UI is not yet complete. The final report therefore describes human review as partially implemented rather than fully complete.
 
 The indexing path now includes a more explicit human-review step than earlier drafts implied. Instead of immediately persisting uploaded images, the current implementation first generates a metadata preview, allows the user to edit the draft fields, surfaces a likely duplicate candidate when appropriate, and only writes to Milvus after confirmation. This matters because duplicate-looking uploads are not always noise: a later upload may contain a cleaner label, a better side view, or richer metadata than the earlier record. The current design therefore treats deduplication as a merge-and-review problem rather than a pure deletion problem. This preview-confirm flow still falls short of a complete audited review system, but it materially strengthens the project's human-in-the-loop behaviour and should be described accordingly.
 
-The evaluation strategy is embedded directly into the design. Retrieval effectiveness is measured primarily with Accuracy@1 and Accuracy@5 because the system is designed around shortlist usefulness rather than top-1 autonomy. OCR robustness is linked to character-level metrics because identifier errors are often character-sensitive. Interactive feasibility is tied to component-level timing capture so that later p50, p90, and p95 analyses can be produced. Finally, engineering reliability is treated as part of evaluation because a system-level project can fail due to broken defaults, fragile imports, or inconsistent API behaviour even if the model idea itself is sound.
+### 3.3 Evaluation Strategy
+
+The evaluation strategy is embedded directly into the design, mapping specific metrics to the user and domain requirements identified above. Retrieval effectiveness is measured primarily with Accuracy@1 and Accuracy@5. Accuracy@5 is particularly relevant because the system functions as a shortlist assistant rather than a fully autonomous classifier; ensuring the correct item is within the Top-5 candidates directly supports the user interaction model and builds trust without demanding perfect top-1 accuracy [28]. 
+
+OCR robustness is linked to Character Error Rate (CER) because identifier errors (like model numbers) are highly character-sensitive, and a single wrong digit fundamentally changes the part context [29]. Interactive feasibility is tied to component-level timing capture so that later p50, p90, and p95 analyses can be produced, as interactive system latency heavily dictates user acceptance [30]. Finally, engineering reliability is treated as an explicit part of evaluation because a system-level project can fail due to fragile imports or inconsistent API behaviour, even if the underlying model is sound.
 
 This design deliberately leaves room for time-boxed extensions. Object detection and focused cropping are strong candidates for improving both OCR and image retrieval. Cross-encoder reranking may help with near-duplicate disambiguation. Confidence calibration and review queues could make writeback safer. These are not failures of the design; they are the next layer of refinement after a functioning retrieval-first MVP has been established.
 
@@ -93,7 +168,9 @@ The user-facing frontend is implemented in React with Mantine. It includes a sea
 
 The indexing interface was also extended beyond a simple upload form. The current flow supports multi-image upload, GPT-based metadata preview, user-side field correction, and confirmation-based saving. After confirmation, all selected images are indexed under the same model rather than only one representative frame. This is practically important because many parts can only be identified reliably when several views are available, such as front, side, label, or connector views.
 
-[Insert Figure 4-2 here: Web search UI showing query image and Top-K results.]
+![Figure 4-X: Indexing interface showing metadata preview.](../images/fig_index_ui.png)
+
+![Figure 4-2: Web search UI showing query image and Top-K results.](../images/fig_4_2_web_search_ui.png)
 
 The retrieval core lives in `packages/model/smart_match`, where the hybrid-search orchestrator coordinates the pipeline. At query time, the orchestrator may use several evidence channels: image embeddings, OCR-derived text embeddings, optional caption-derived text embeddings, direct user text, lexical hits, and specification-oriented token matches. These channels are not always all present, so the implementation is designed to activate whichever are available and to fall back cleanly when one channel fails. This is particularly important for OCR, which is valuable but unreliable in uncontrolled user images.
 
@@ -111,7 +188,7 @@ The implementation was extended beyond pure image retrieval in two important way
 
 Several implementation changes made during the final validation pass are especially important for the report because they improve safety and make the project's claims easier to defend. The first is agent writeback safety. The request schema for agent chat was changed so that `update_milvus` defaults to `false` instead of `true`. The second is explicit UI control. The web agent page now requires the operator to actively enable writeback before Milvus updates can occur. This change is aligned with the project's human-review requirement and prevents uncertain tool-assisted outputs from automatically polluting the knowledge base.
 
-[Insert Figure 4-4 here: Agent chat UI showing source evidence and writeback toggle.]
+![Figure 4-4: Agent chat UI showing source evidence and writeback toggle.](../images/fig_4_4_agent_chat_ui.png)
 
 The third major improvement is timing instrumentation. Structured timing capture was added to the hybrid-search path for preprocessing, image search, OCR search, caption search, text search, model fetch, finalisation, and total time. This does not yet produce a full latency benchmark by itself, but it creates the measurement hooks required for batch percentile analysis. The fourth improvement is lightweight testability. Package-level eager imports in the model package were changed to lazy imports so that lightweight pytest collection no longer fails by unnecessarily pulling in heavyweight runtime dependencies such as `torch`.
 
