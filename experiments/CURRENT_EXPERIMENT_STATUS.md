@@ -120,33 +120,44 @@ What is now known:
 - the reranker still cannot run on local Apple MPS for this model because MetalPerformanceShaders crashes with an assertion during real scoring
 - the reranker does run on `cpu`, but the per-query latency is very high on this machine
 
-Current blocked comparison:
+Compared configurations:
 
 - `C1`: `OCR off + reranker on`
 - `C3`: `OCR off + reranker off`
 
-Why the comparison is still incomplete:
+Completed reranker-on run:
 
-- the initialization bug is fixed, but the stable runtime path on this machine is `RERANKER_DEVICE=cpu`
-- even with smaller reranker thumbnails, early `C1` queries are taking roughly `~90s` to `~317s` total each, with reranking dominating `finalize`
-- a full `30`-query `C1` run is therefore an hours-scale job on the current local hardware
+- [20260321_020948_current_index_hybrid](/Users/studio/Downloads/project/Smart_vision/experiments/runs/20260321_020948_current_index_hybrid)
+- [e1_metrics.json](/Users/studio/Downloads/project/Smart_vision/experiments/runs/20260321_020948_current_index_hybrid/e1_metrics.json)
+- [e3_summary.json](/Users/studio/Downloads/project/Smart_vision/experiments/runs/20260321_020948_current_index_hybrid/e3_summary.json)
+
+Observed values:
+
+- `C1` group-level `Hit@1 = 1.0`
+- `C1` group-level `Hit@5 = 1.0`
+- `C1` `MRR = 1.0`
+- exact `item_id@1 = 1.0`
+- `C1` warm total mean latency: `89337.71 ms`
+- `C1` warm `finalize` mean latency: `65199.13 ms`
+- `C1` warm `preprocessing` mean latency: `23790.06 ms`
 
 Current conclusion:
 
 - the baseline holdout retrieval can be evaluated now
 - the reranker path is no longer broken at initialization time
-- however, the reranker ablation is still not complete because the stable execution path is currently too slow to finish quickly on this local machine
-- this is now a runtime-throughput limitation, not the earlier initialization bug
+- on the sampled holdout task, reranker-on did not improve retrieval quality over the reranker-off baseline
+- on the current local machine, reranker-on increased warm latency from roughly `0.73s` (`C3`) to roughly `89.34s` (`C1`)
+- the current practical conclusion is that reranker-on is not operationally justified on this Apple Silicon setup
 
 Reference files:
 
 - older failure note: [c1_reranker_failure.json](/Users/studio/Downloads/project/Smart_vision/experiments/runs/20260321_011908_sampled_ablation/c1_reranker_failure.json)
 - sampled analysis note: [analysis_summary.md](/Users/studio/Downloads/project/Smart_vision/experiments/runs/20260321_011908_sampled_ablation/analysis_summary.md)
-- active reranker-on run directory: [20260321_020948_current_index_hybrid](/Users/studio/Downloads/project/Smart_vision/experiments/runs/20260321_020948_current_index_hybrid)
+- completed reranker-on run directory: [20260321_020948_current_index_hybrid](/Users/studio/Downloads/project/Smart_vision/experiments/runs/20260321_020948_current_index_hybrid)
 
 ## 4. OCR Evaluation Status
 
-The OCR-related retrieval ablation is still **not complete**.
+The OCR-related full retrieval ablation is still **not complete**, but a lighter OCR-only pilot has now completed.
 
 What was attempted:
 
@@ -155,20 +166,43 @@ What was attempted:
 - micro-pilot run directory:
   - [20260321_013000_ocr_pilot](/Users/studio/Downloads/project/Smart_vision/experiments/runs/20260321_013000_ocr_pilot)
 
-Observed runtime issue:
+Observed runtime issue in the earlier full OCR+Qwen pilot:
 
 - even a `2`-sample micro-pilot did not complete within the local time budget after PaddleOCR-VL and Qwen runtime initialization
 - the process had to be stopped manually after several minutes without producing completed result files
 
+Completed lighter OCR-only pilot:
+
+- [20260321_205523_ocr_pilot](/Users/studio/Downloads/project/Smart_vision/experiments/runs/20260321_205523_ocr_pilot)
+- [e2_ocr_pilot_summary.json](/Users/studio/Downloads/project/Smart_vision/experiments/runs/20260321_205523_ocr_pilot/e2_ocr_pilot_summary.json)
+
+Protocol:
+
+- `10` sampled items
+- up to `1` image per item
+- `skip_qwen = true`
+- heuristic best-image selection by OCR signal
+
+Observed OCR-only values:
+
+- Paddle part-number exact rate: `0.1`
+- Paddle part-number recall rate: `0.1`
+- Paddle maker exact rate: `0.1`
+- Paddle maker recall rate: `0.1`
+- Paddle part-number mean CER: `1.9625`
+- total duration: `523.45s`
+
 Current conclusion:
 
-- OCR remains an unresolved design choice.
+- OCR remains an unresolved design choice for the full retrieval pipeline.
 - On the current Apple Silicon local environment, the OCR+Qwen identifier path is operationally expensive enough to be a practical bottleneck.
-- Until the OCR pilot finishes or a lighter OCR protocol is introduced, no final claim should be made that OCR helps or hurts overall retrieval quality.
+- Even the lighter OCR-only pilot shows weak structured identifier recovery on these sampled images.
+- The current evidence does not support enabling OCR as a routine local retrieval signal on this hardware/workload.
 
 Reference file:
 
 - timeout note: [timeout_note.json](/Users/studio/Downloads/project/Smart_vision/experiments/runs/20260321_013000_ocr_pilot/timeout_note.json)
+- completed OCR-only pilot: [e2_ocr_pilot_summary.json](/Users/studio/Downloads/project/Smart_vision/experiments/runs/20260321_205523_ocr_pilot/e2_ocr_pilot_summary.json)
 
 ## 5. Recommended Report Framing Right Now
 
@@ -178,12 +212,11 @@ Safe claims:
 - current-index sanity benchmarking shows strong operational retrieval on the already indexed collection
 - engineering reliability evidence is available
 - sampled image-holdout baseline retrieval on isolated collections is available
-- reranker ablation is no longer blocked by initialization, but it is still expensive enough that the current run is long-running on local hardware
-- OCR evaluation remains incomplete and operationally expensive on the current local setup
+- reranker-on does not improve the sampled holdout result but dramatically increases latency on the current local hardware
+- OCR+Qwen is operationally expensive, and a lighter OCR-only pilot also shows weak identifier recovery on sampled images
 
 Unsafe claims:
 
 - that the full 1491-item controlled ablation is already completed
-- that reranker improves retrieval quality before the current long-running `cpu` reranker run finishes
-- that OCR-on is quantitatively better or worse overall without the dedicated OCR benchmark finishing
+- that OCR-on is quantitatively better for full end-to-end retrieval without a dedicated OCR-on retrieval benchmark
 - that the current sanity benchmark alone proves strict generalisation performance

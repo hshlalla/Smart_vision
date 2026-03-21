@@ -155,6 +155,50 @@ def _build_image_holdout_sample(
     return index_rows, query_rows, summary
 
 
+def _build_text_light_variant(
+    *,
+    index_rows: list[dict[str, Any]],
+    query_rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """
+    Create a text-light/image-dominant variant.
+
+    - Indexed rows keep the same images and item identity but strip most textual
+      metadata so the text channel contributes minimally.
+    - Query rows keep the same held-out images but clear text_query and text
+      helper fields, effectively making the query image-dominant.
+    """
+
+    stripped_index_rows: list[dict[str, Any]] = []
+    for row in index_rows:
+        item = dict(row)
+        for key in (
+            "maker",
+            "part_number",
+            "subcategory",
+            "description",
+            "product_info",
+            "title",
+            "vehicle_name",
+            "year",
+            "group_key",
+        ):
+            if key in item:
+                item[key] = ""
+        stripped_index_rows.append(item)
+
+    stripped_query_rows: list[dict[str, Any]] = []
+    for row in query_rows:
+        item = dict(row)
+        item["text_query"] = ""
+        item["maker"] = ""
+        item["part_number"] = ""
+        item["product_info"] = ""
+        stripped_query_rows.append(item)
+
+    return stripped_index_rows, stripped_query_rows
+
+
 def _drop_collections(names: list[str], milvus_uri: str) -> None:
     sys.path.insert(0, str(REPO_ROOT / "apps" / "api"))
     sys.path.insert(0, str(REPO_ROOT / "packages" / "model"))
@@ -225,6 +269,19 @@ def main() -> int:
     _write_jsonl(index_manifest, index_rows)
     _write_jsonl(query_manifest, query_rows)
     _write_json(dataset_dir / "summary.json", split_summary)
+    c4_index_rows, c4_query_rows = _build_text_light_variant(index_rows=index_rows, query_rows=query_rows)
+    c4_dataset_dir = run_root / "dataset_c4"
+    c4_index_manifest = c4_dataset_dir / "index_manifest.jsonl"
+    c4_query_manifest = c4_dataset_dir / "query_manifest.jsonl"
+    _write_jsonl(c4_index_manifest, c4_index_rows)
+    _write_jsonl(c4_query_manifest, c4_query_rows)
+    _write_json(
+        c4_dataset_dir / "summary.json",
+        {
+            **split_summary,
+            "protocol_variant": "text-light / image-dominant",
+        },
+    )
 
     configs = [item.strip().lower() for item in args.configs.split(",") if item.strip()]
     config_defs = {
@@ -236,7 +293,7 @@ def main() -> int:
             "label": "ocr_off_reranker_off",
             "reuse_from": "c1",
         },
-        "c4": {"enable_ocr": "0", "enable_reranker": "1", "label": "text_light_placeholder"},
+        "c4": {"enable_ocr": "0", "enable_reranker": "1", "label": "ocr_off_text_light_reranker_on"},
     }
     aggregate: dict[str, Any] = {
         "run_root": str(run_root),
@@ -260,6 +317,12 @@ def main() -> int:
             collections = _collection_names(prefix)
             _drop_collections(list(collections.values()), milvus_uri)
 
+        selected_index_manifest = index_manifest
+        selected_query_manifest = query_manifest
+        if name == "c4":
+            selected_index_manifest = c4_index_manifest
+            selected_query_manifest = c4_query_manifest
+
         env = os.environ.copy()
         env.update(
             {
@@ -278,7 +341,7 @@ def main() -> int:
                 "-m",
                 "smart_match.scripts.index_unified_jsonl",
                 "--dataset",
-                str(index_manifest),
+                str(selected_index_manifest),
                 "--repo-root",
                 str(REPO_ROOT),
                 "--milvus-uri",
@@ -308,19 +371,19 @@ def main() -> int:
             "--env-file",
             str(args.env_file),
             "--queries",
-            str(query_manifest),
+            str(selected_query_manifest),
             "--index",
-            str(index_manifest),
+            str(selected_index_manifest),
             "--mode",
             "hybrid",
             "--top-k",
             str(args.top_k),
             "--latency-limit",
-            str(min(args.latency_limit, len(query_rows))),
+            str(min(args.latency_limit, len(selected_query_manifest.read_text(encoding="utf-8").splitlines()))),
             "--warm-passes",
             str(args.warm_passes),
             "--scenario-count",
-            str(min(args.scenario_count, len(query_rows))),
+            str(min(args.scenario_count, len(selected_query_manifest.read_text(encoding="utf-8").splitlines()))),
             "--captioner-backend",
             "none",
             "--enable-ocr-query",

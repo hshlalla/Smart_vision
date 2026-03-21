@@ -186,6 +186,13 @@ def main() -> int:
     parser.add_argument("--sample-size", type=int, default=30)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max-images-per-item", type=int, default=4)
+    parser.add_argument("--skip-qwen", action="store_true", help="Run OCR-only pilot without Qwen metadata extraction.")
+    parser.add_argument(
+        "--write-partial-every",
+        type=int,
+        default=1,
+        help="Write partial rows/progress every N completed samples.",
+    )
     args = parser.parse_args()
 
     _load_env_file(args.env_file)
@@ -206,6 +213,7 @@ def main() -> int:
 
     results: list[dict[str, Any]] = []
     started = time.perf_counter()
+    partial_every = max(1, int(args.write_partial_every))
     for row in sampled:
         candidate_paths = [
             path
@@ -228,8 +236,12 @@ def main() -> int:
         scored_candidates.sort(key=lambda item: (item[0], len(item[2])), reverse=True)
         best_score, best_image, best_ocr_text = scored_candidates[0]
 
-        qwen_only = service._suggest_metadata_from_qwen([best_image])  # type: ignore[attr-defined]
-        qwen_merged = service._suggest_metadata_from_qwen([best_image], label_ocr_text=best_ocr_text)  # type: ignore[attr-defined]
+        if args.skip_qwen:
+            qwen_only: dict[str, Any] = {}
+            qwen_merged: dict[str, Any] = {}
+        else:
+            qwen_only = service._suggest_metadata_from_qwen([best_image])  # type: ignore[attr-defined]
+            qwen_merged = service._suggest_metadata_from_qwen([best_image], label_ocr_text=best_ocr_text)  # type: ignore[attr-defined]
 
         paddle_part = service._infer_part_number_from_text(best_ocr_text)  # type: ignore[attr-defined]
         paddle_maker = service._infer_maker_from_text(best_ocr_text)  # type: ignore[attr-defined]
@@ -284,12 +296,24 @@ def main() -> int:
             ).strip(),
         }
         results.append(result)
+        if len(results) % partial_every == 0:
+            _write_jsonl(run_dir / "e2_ocr_pilot_rows.partial.jsonl", results)
+            _write_json(
+                run_dir / "progress.json",
+                {
+                    "completed_samples": len(results),
+                    "requested_samples": args.sample_size,
+                    "skip_qwen": bool(args.skip_qwen),
+                    "elapsed_sec": round(time.perf_counter() - started, 2),
+                },
+            )
 
     summary = {
         "run_dir": str(run_dir),
         "protocol": "sampled heuristic OCR pilot; best OCR-signal image selected per item from up to 4 images",
         "sample_size_requested": args.sample_size,
         "sample_size_completed": len(results),
+        "skip_qwen": bool(args.skip_qwen),
         "duration_sec": round(time.perf_counter() - started, 2),
         "methods": {
             "paddle": _summarize_method(results, method_key="paddle"),

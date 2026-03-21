@@ -58,9 +58,9 @@ Email: hshlalla@naver.com
 | ID | 목표 | 상태 | 코멘트 |
 |---|---|---|---|
 | O1 | End-to-end MVP | 구현 | 업로드 -> 인덱싱 -> 검색/채팅 동작. `experiments/CURRENT_EXPERIMENT_STATUS.md` 기준 current-index suite에서 `8/8` scenario success 확보 |
-| O2 | Retrieval 정량평가 | 부분구현 | current-index sanity benchmark와 sampled holdout `C3` baseline은 있음. 다만 full controlled `C1/C2/C3/C4` 비교는 후속 |
-| O3 | OCR 품질 정량평가 | 부분구현 | OCR 경로/로그/fallback과 OCR on/off 토글은 구현됨. pilot 시도는 있었지만 CER 자동집계/aggregate benchmark는 후속 |
-| O4 | Latency 측정 | 부분구현 | 단계별 timing instrumentation과 warm mean observation은 있음. 다만 p50/p90/p95 및 resource summary는 후속 |
+| O2 | Retrieval 정량평가 | 부분구현 | current-index sanity benchmark와 sampled holdout `C1/C3` 비교는 완료. 다만 `C2`, `C4`, 더 큰 controlled ablation은 후속 |
+| O3 | OCR 품질 정량평가 | 부분구현 | OCR-only `10`-sample pilot 완료. 다만 full OCR+Qwen benchmark와 OCR-on retrieval comparison은 후속 |
+| O4 | Latency 측정 | 부분구현 | `C1`, `C3` 단계별 latency와 p50/p90/p95는 확보. 다만 indexing benchmark와 peak resource summary는 후속 |
 | O5 | 사용자 효율/신뢰 검증 | 부분구현 | 기능 준비 완료, pilot protocol 정의 완료. aggregate 사용자 연구 결과는 후속 |
 
 ## 3. Final Architecture
