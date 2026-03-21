@@ -70,14 +70,14 @@ Evaluation 5.1 시작 직후
 
 `Suggested rows`
 - Retrieval effectiveness / Accuracy@1, Accuracy@5 / supported
-- OCR robustness / CER + qualitative failure analysis / partial
-- Latency / timing instrumentation + p50/p90/p95 / partial
+- OCR robustness / identifier benchmark + qualitative failure analysis / supported
+- Latency / benchmark latency + local supplementary latency / supported
 - Engineering reliability / pytest regression evidence / supported
-- User usefulness / usability study / planned
+- User usefulness / workflow readiness + pilot protocol / partial
 
 `Content source`
-- `docs/reports/final_report_revision_checklist.md`
-- `submission/evidence/report_support_2026-03-10/README.md`
+- `experiments/qwen3_vl_1000_sample_final_report_en.md`
+- `docs/reports/final_report_status.md`
 
 ### Table 5-2. Image-only baseline retrieval results
 
@@ -115,7 +115,7 @@ Evaluation 마지막 부분, critical discussion 직전 또는 직후
 
 `Content source`
 - `docs/reports/final_report_status.md`
-- `submission/evidence/report_support_2026-03-10/change_summary.md`
+- `experiments/qwen3_vl_1000_sample_final_report_en.md`
 
 ## 3. Recommended Figures
 

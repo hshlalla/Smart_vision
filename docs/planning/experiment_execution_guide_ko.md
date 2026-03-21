@@ -215,7 +215,7 @@ interactive support 수준의 응답성을 갖는지 확인한다.
 1. 숫자를 표로 정리
 2. 각 표 아래 핵심 해석 2~3문장 작성
 3. 실패 사례 이미지 2~4개 선정
-4. [`experiment_results_writeup_template_ko.md`](/Users/mac/project/Smart_vision/docs/reports/experiment_results_writeup_template_ko.md)에 수치 반영
+4. `experiments/qwen3_vl_1000_sample_final_report_ko.md`와 `docs/reports/final_report_docx_ready_ko.md`에 수치 반영
 5. 최종 리포트 본문에 복사
 
 ## 8. 최소 마감 전략
@@ -228,4 +228,3 @@ interactive support 수준의 응답성을 갖는지 확인한다.
 - usability pilot summary 표 1개 또는 protocol pending 문단
 
 이 4개만 있어도 Evaluation 장의 핵심 뼈대는 충분히 완성된다.
-

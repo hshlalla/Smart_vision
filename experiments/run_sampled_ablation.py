@@ -165,6 +165,8 @@ def _build_text_light_variant(
 
     - Indexed rows keep the same images and item identity but strip most textual
       metadata so the text channel contributes minimally.
+    - Stable evaluation keys such as group_key are preserved so retrieval
+      metrics remain comparable.
     - Query rows keep the same held-out images but clear text_query and text
       helper fields, effectively making the query image-dominant.
     """
@@ -181,7 +183,6 @@ def _build_text_light_variant(
             "title",
             "vehicle_name",
             "year",
-            "group_key",
         ):
             if key in item:
                 item[key] = ""

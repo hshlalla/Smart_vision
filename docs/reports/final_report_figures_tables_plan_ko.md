@@ -30,6 +30,9 @@
 - **배치 위치**: Evaluation 장 시작부
 - **권장 캡션**: 각 평가 축별로 이미 확보된 근거, partial evidence, future work를 구분한 표
 - **핵심 메시지**: 이미 수행된 것과 아직 진행 중인 것을 정직하게 분리함
+- **근거 소스**:
+  - `experiments/qwen3_vl_1000_sample_final_report_ko.md`
+  - `docs/reports/final_report_status.md`
 
 ### Table 5-2. Image-only baseline retrieval 결과
 
@@ -42,6 +45,9 @@
 - **배치 위치**: Evaluation 마지막 부분
 - **권장 캡션**: objective별 현재 상태, 근거, 남은 gap을 요약한 표
 - **핵심 메시지**: implementation과 evaluation의 경계를 솔직하게 드러냄
+- **근거 소스**:
+  - `docs/reports/final_report_status.md`
+  - `experiments/qwen3_vl_1000_sample_final_report_ko.md`
 
 ## 3. Recommended Figures
 
