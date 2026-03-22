@@ -20,7 +20,7 @@ flowchart TD
   subgraph MODEL["Model Core"]
     M --> P[Preprocessing]
     P --> O[OCR]
-    P --> VI[Image Embedding BGE-VL]
+    P --> VI[Image Embedding Qwen3-VL]
     P --> VT[Text Embedding BGE-M3]
     P --> CAP[Captioning Optional]
     M --> F[Fusion + lexical/spec scoring]
@@ -54,13 +54,17 @@ flowchart LR
   CHAT --> U
   CAT --> U
 
-  U --> H1[/api/v1/hybrid/index]
+  U --> H1[/api/v1/hybrid/index/preview]
+  U --> H1B[/api/v1/hybrid/index/confirm]
+  U --> H1C[/api/v1/hybrid/index/tasks/{task_id}]
   U --> H2[/api/v1/hybrid/search]
   U --> H3[/api/v1/agent/chat]
   U --> H4[/api/v1/catalog/index_pdf]
   U --> H5[/api/v1/catalog/search]
 
-  H1 --> V1[Index success/fail]
+  H1 --> V1[Metadata preview + duplicate candidate]
+  H1B --> V1B[Queued indexing task]
+  H1C --> V1C[Task status polling]
   H2 --> V2[Top-K results + scores]
   H3 --> V3[Answer + sources + identified]
   H5 --> V4[Catalog chunk list + source/page]
@@ -75,7 +79,7 @@ flowchart TD
 
   ORCH --> NORM[MetadataNormalizer]
   ORCH --> OCR[OCR Pipeline]
-  ORCH --> IMG[BGEVLImageEncoder]
+  ORCH --> IMG[Qwen3VLImageEncoder]
   ORCH --> TXT[BGEM3TextEncoder]
   ORCH --> CAP[Captioner Optional]
 
@@ -87,7 +91,7 @@ flowchart TD
 
   IDX --> COL[(image_parts/text_parts/attrs_parts/model_texts/caption_parts)]
   ORCH --> CNT[MilvusCounterStore]
-  CNT --> COL
+  CNT --> SQL[(Local SQLite counter namespace)]
 
   COL --> SCORE[Dense score image/ocr/caption/text]
   ORCH --> LEX[Lexical score]
@@ -113,7 +117,7 @@ sequenceDiagram
   participant Milvus as Milvus
 
   User->>Web: 이미지 업로드 후 preview 실행
-  Web->>API: POST /index/preview (images + optional metadata)
+  Web->>API: POST /index/preview (images + optional metadata + optional label images)
   API->>HS: preview_index_asset(images, draft)
   HS-->>API: metadata draft + optional duplicate candidate
   API-->>Web: preview response
@@ -125,7 +129,7 @@ sequenceDiagram
   Pre-->>Orch: vectors + normalized metadata
   Orch->>Milvus: upsert image_parts/text_parts/attrs_parts/model_texts/caption_parts
   Milvus-->>Orch: insert/flush OK
-  Orch-->>HS: success
+  Orch-->>HS: task created / indexing executed in background
   HS-->>API: {"status":"queued","task_id":"..."}
   API-->>Web: 200 OK
   Web-->>User: 작업 상태 polling 시작

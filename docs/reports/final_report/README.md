@@ -15,6 +15,8 @@
 4. [`04_Implementation.md`](./04_Implementation.md)
 5. [`05_Evaluation.md`](./05_Evaluation.md)
 6. [`06_Conclusion.md`](./06_Conclusion.md)
+7. [`07_References.md`](./07_References.md)
+8. [`08_Appendices.md`](./08_Appendices.md)
 
 함께 보는 문서:
 
@@ -29,3 +31,5 @@
 - 이 폴더는 한국어 장별 원고다.
 - 평가 장은 별도 템플릿이 아니라 최종 실험 보고서의 확정 수치를 직접 반영한다.
 - 최종 권고 구성은 `C3 (OCR off, reranker off)`로 통일한다.
+- 현재 구조에서는 본문 6장 + References + Appendices면 충분하다.
+- 추가 분할은 필요할 때만 한다. 예를 들어 Methodology를 Design과 분리하거나, Evaluation 안의 Experiment Setup을 별도 장으로 뺄 필요가 생길 때만 쪼갠다.

@@ -29,7 +29,7 @@ Email: hshlalla@naver.com
 
 이러한 관찰을 바탕으로 본 프로젝트의 목표는, 사용자가 업로드한 부품 사진을 입력으로 받아 Top-5 후보 shortlist와 listing-oriented summary, 그리고 supporting evidence를 함께 제공하는 end-to-end prototype을 구현·평가하는 것이다. 세부 목표는 end-to-end 워크플로우 구현, retrieval effectiveness 평가, OCR robustness 분석, interactive feasibility를 위한 latency instrumentation 추가, 그리고 실제 listing assistance 관점에서의 유용성 평가로 정리할 수 있다.
 
-이 보고서의 나머지 구성은 다음과 같다. 2장은 visual retrieval, OCR, multimodal embeddings, vector databases, interactive feedback 관련 선행연구를 검토한다. 3장은 시스템 설계를 설명하며 evaluation strategy를 설계 안에 포함한다. 4장은 web, API, model 계층에 걸친 구현 내용을 설명한다. 5장은 현재 확보된 근거를 바탕으로 evaluation을 수행하되, 이미 측정된 항목과 아직 계획·부분 완료 상태인 항목을 구분한다. 6장은 기여, 한계, 향후 과제를 정리한다.
+이 보고서의 나머지 구성은 다음과 같다. 2장은 visual retrieval, OCR, multimodal embeddings, vector databases, interactive feedback 관련 선행연구를 검토한다. 3장은 시스템 설계를 설명하며 evaluation strategy를 설계 안에 포함한다. 4장은 web, API, model 계층에 걸친 구현 내용을 설명한다. 5장은 수행 완료된 실험과 평가 결과를 바탕으로 시스템의 성능과 한계를 분석한다. 6장은 기여, 한계, 향후 과제를 정리한다.
 
 ## 2. Literature Review
 
@@ -198,7 +198,7 @@ Latency 결과도 같은 방향을 뒷받침한다. 보고서 기준 `C2`의 war
 
 최종 운영 권고는 여기서 한 단계 더 나아간다. 로컬 추가 검증에서는 `C3 (OCR off, reranker off)`와 `C1 (OCR off, reranker on)`을 비교했다. sampled holdout 기준 `C3`는 group `Hit@1 = 1.0`, group `Hit@5 = 1.0`, `MRR = 1.0`, exact `item_id@1 = 0.9667`, warm mean total latency `731.13 ms`를 기록했다. 반면 `C1`은 retrieval quality 이득 없이 warm mean total latency가 `89337.71 ms`까지 증가했다. 따라서 main benchmark에서 `C4`가 가장 강한 결과를 보였더라도, 실제 운영 권고 구성은 `C3`로 정리하는 것이 더 타당하다.
 
-사용성 측면의 근거도 완전히 비어 있지는 않다. listing-oriented review flow, metadata preview-confirm path, duplicate-review prompt, source-backed agent response, catalog evidence display가 모두 구현되어 있고, post-task questionnaire 기반 pilot protocol도 준비되어 있다. 따라서 최종 보고서에서는 “user-centred workflow implemented, pilot protocol prepared”라고 쓰는 것이 가장 정확하다.
+사용성 측면의 근거도 이제는 단순 계획 수준이 아니다. `experiments/userbillaty.xlsx`에는 총 `6`개의 응답이 저장되어 있었고, 그중 `1`개는 외부 테스트 링크가 오프라인이었던 사례라 유효 응답은 `n = 5`로 보는 것이 타당하다. 유효 응답 기준 평균 점수는 인터페이스 이해 용이성 `4.4/5`, 검색 결과의 후보 축소 유용성 `5.0/5`, evidence display의 신뢰 판단 도움 `4.4/5`, metadata preview의 노력 절감 효과 `4.4/5`, 수동 검색 대비 선호도 `4.6/5`, shortlist 기반 판단 자신감 `4.8/5`였다. 자유응답에서도 shortlist relevance, evidence section, metadata preview, workflow simplicity가 반복적으로 긍정 평가되었다. 예를 들어 한 참여자는 *“The shortlist of candidate parts was highly relevant. It successfully filtered out the noise and showed exactly what I was looking for.”*라고 답했고, 다른 참여자는 *“The ‘evidence’ section that explains why a certain part was suggested”*가 가장 유용했다고 적었다. 반면 개선 제안은 compare view, confidence score, onboarding tooltip, export support처럼 refinement 성격이 강했다. 표본 수는 작지만, 이는 user-centred workflow가 실제 listing assistance로서 유효하다는 pilot evidence로 사용할 수 있다.
 
 Engineering validation 측면에서는 더 구체적인 근거가 있다. March artifact bundle에는 API pytest `12 passed, 1 warning in 5.37s`, model pytest `4 passed in 0.09s`가 기록되어 있다. 이후 reliability refresh에서는 API regression tests, model-package tests, frontend production build, retrieval-eval input generation이 모두 정상으로 확인되었다. 이는 full benchmark suite를 대체하진 않지만, 최근 safety/testability 변경이 실제로 검증되었다는 중요한 근거다.
 
