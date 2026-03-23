@@ -55,15 +55,15 @@ By combining these signals rather than relying on a single model output, the sys
 
 As shown by the domain and survey findings in Chapter 1, users do not fully trust AI-generated outputs for secondhand marketplace listings without the opportunity to inspect and correct them [3]. For this reason, the system is designed not as an autonomous classifier, but as an interactive decision-support tool.
 
-This is implemented through a preview-confirm workflow:
-
-- **Preview Phase (`/api/v1/hybrid/index/preview`)**  
-  The user uploads one or more images. The system generates a metadata draft and may also surface a likely duplicate candidate if the uploaded item appears similar to an already indexed model.
-
 [Insert Figure 3.3: Login page]  
 *(작성 가이드: 서비스 진입용 로그인 화면 단독 캡처 삽입)*
 
 **Figure 3.3. Login page used as the service entry point before indexing, search, catalog, and agent-assisted workflows.**
+
+This is implemented through a preview-confirm workflow:
+
+- **Preview Phase (`/api/v1/hybrid/index/preview`)**  
+  The user uploads one or more images. The system generates a metadata draft and may also surface a likely duplicate candidate if the uploaded item appears similar to an already indexed model.
 
 - **Review and Edit**  
   The frontend presents the generated metadata and visual evidence. The user can inspect the candidate information, compare images, and manually revise fields such as maker, part number, category, and description.

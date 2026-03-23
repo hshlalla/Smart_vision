@@ -54,15 +54,15 @@
 
 1장의 도메인 분석과 survey 결과가 보여주듯, 사용자는 중고 플랫폼 listing에서 AI 출력을 검토하고 수정할 기회 없이 그대로 신뢰하지 않는다. 따라서 본 시스템은 autonomous classifier가 아니라, interactive decision-support tool로 설계되었다.
 
-이 철학은 preview-confirm workflow로 구현된다.
-
-- **Preview Phase (`/api/v1/hybrid/index/preview`)**  
-  사용자는 한 장 이상의 이미지를 업로드한다. 시스템은 metadata draft를 생성하고, 업로드 항목이 기존 indexed model과 유사해 보일 경우 possible duplicate candidate도 함께 반환할 수 있다.
-
 [Insert Figure 3.3: Login page]  
 *(작성 가이드: 서비스 진입용 로그인 화면 단독 캡처 삽입)*
 
 **Figure 3.3. 인덱싱, 검색, catalog, agent-assisted workflow에 들어가기 전의 서비스 진입 로그인 화면.**
+
+이 철학은 preview-confirm workflow로 구현된다.
+
+- **Preview Phase (`/api/v1/hybrid/index/preview`)**  
+  사용자는 한 장 이상의 이미지를 업로드한다. 시스템은 metadata draft를 생성하고, 업로드 항목이 기존 indexed model과 유사해 보일 경우 possible duplicate candidate도 함께 반환할 수 있다.
 
 - **Review and Edit**  
   frontend는 생성된 metadata와 visual evidence를 제시한다. 사용자는 candidate 정보를 확인하고, 이미지 비교를 통해 maker, part number, category, description 같은 필드를 수동으로 수정할 수 있다.
