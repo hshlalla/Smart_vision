@@ -60,16 +60,21 @@ This is implemented through a preview-confirm workflow:
 - **Preview Phase (`/api/v1/hybrid/index/preview`)**  
   The user uploads one or more images. The system generates a metadata draft and may also surface a likely duplicate candidate if the uploaded item appears similar to an already indexed model.
 
+[Insert Figure 3.3: Login page]  
+*(작성 가이드: 서비스 진입용 로그인 화면 단독 캡처 삽입)*
+
+**Figure 3.3. Login page used as the service entry point before indexing, search, catalog, and agent-assisted workflows.**
+
 - **Review and Edit**  
   The frontend presents the generated metadata and visual evidence. The user can inspect the candidate information, compare images, and manually revise fields such as maker, part number, category, and description.
 
 - **Confirm Phase (`/api/v1/hybrid/index/confirm`)**  
   After user confirmation, the system places the indexing job into an asynchronous queue. The uploaded images are then processed and stored in Milvus, and the task state is tracked through polling.
 
-[Insert Figure 3.3: User Interface demonstrating the Human-in-the-Loop preview and verification workflow]  
-*(작성 가이드: 업로드 화면과 preview/결과 확인 화면 스크린샷 2장 삽입)*
+[Insert Figure 3.4: Indexing upload and preview-confirm screens]  
+*(작성 가이드: 인덱싱 업로드 화면과 preview/confirm 결과 화면을 2장 패널 또는 3장 패널로 삽입)*
 
-**Figure 3.3. Human-in-the-loop indexing workflow, showing metadata preview, duplicate review, and user confirmation before final write-back.**
+**Figure 3.4. Human-in-the-loop indexing workflow, showing image upload, metadata draft generation, duplicate review, and user confirmation before final write-back.**
 
 This design serves two purposes. First, it reduces the risk of blind write-back from uncertain AI output. Second, it keeps the indexed dataset cleaner by requiring a final human confirmation step before persistence.
 
@@ -88,6 +93,16 @@ At query time, the system supports both multimodal and lighter-weight retrieval 
 
 The key design principle is graceful degradation. If OCR fails or is disabled, image retrieval and metadata-aware matching should still produce useful candidates. If pure visual similarity is insufficient, lexical and identifier signals can reinforce ranking. This makes the retrieval layer more robust under noisy real-world image conditions.
 
+[Insert Figure 3.5: Search page]  
+*(작성 가이드: 검색 입력 화면 전체를 단독 캡처로 삽입)*
+
+**Figure 3.5. Search page used to submit multimodal queries, including image input and structured text input for part retrieval.**
+
+[Insert Figure 3.6: Search results and evidence-backed shortlist]  
+*(작성 가이드: Top-K 결과, thumbnail, evidence section이 함께 보이는 결과 화면을 단독 또는 2장 패널로 삽입)*
+
+**Figure 3.6. Search results and evidence-backed shortlist, showing how multimodal queries are turned into ranked candidates with inspectable supporting evidence.**
+
 ## 3.6 Extended Services: Catalog and Agent Support
 
 The core retrieval pipeline is complemented by two extended service paths:
@@ -98,10 +113,15 @@ The core retrieval pipeline is complemented by two extended service paths:
 - **Agent-Orchestrated Assistance**  
   The agent layer can combine hybrid search, catalog search, and web search to provide broader evidence when simple retrieval alone is not sufficient.
 
-[Insert Figure 3.4: Agent and catalog orchestration path]  
-*(작성 가이드: `docs/architecture/ARCHITECTURE_MERMAID.md`의 “5) Catalog + Agent Orchestration Path” 다이어그램 캡처본 또는 대응 UI 스크린샷 삽입)*
+[Insert Figure 3.7: Catalog interface]  
+*(작성 가이드: catalog 페이지 단독 캡처 삽입)*
 
-**Figure 3.4. Extended orchestration path for catalog retrieval and agent-assisted evidence expansion beyond the core hybrid search workflow.**
+**Figure 3.7. Catalog interface for document-grounded lookup over manuals, PDF references, and supporting technical material.**
+
+[Insert Figure 3.8: Agent support interface]  
+*(작성 가이드: agent 페이지 단독 캡처 삽입. 필요하면 `docs/architecture/ARCHITECTURE_MERMAID.md`의 “5) Catalog + Agent Orchestration Path” 다이어그램을 함께 보조 자료로 사용)*
+
+**Figure 3.8. Agent support interface illustrating how catalog retrieval, hybrid search, and broader evidence gathering extend the core retrieval workflow.**
 
 These components are not the sole focus of the retrieval benchmark, but they are part of the overall design because they extend the system from a narrow retrieval engine into a more practical listing-assistance workflow.
 

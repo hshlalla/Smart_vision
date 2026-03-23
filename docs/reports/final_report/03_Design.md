@@ -59,16 +59,21 @@
 - **Preview Phase (`/api/v1/hybrid/index/preview`)**  
   사용자는 한 장 이상의 이미지를 업로드한다. 시스템은 metadata draft를 생성하고, 업로드 항목이 기존 indexed model과 유사해 보일 경우 possible duplicate candidate도 함께 반환할 수 있다.
 
+[Insert Figure 3.3: Login page]  
+*(작성 가이드: 서비스 진입용 로그인 화면 단독 캡처 삽입)*
+
+**Figure 3.3. 인덱싱, 검색, catalog, agent-assisted workflow에 들어가기 전의 서비스 진입 로그인 화면.**
+
 - **Review and Edit**  
   frontend는 생성된 metadata와 visual evidence를 제시한다. 사용자는 candidate 정보를 확인하고, 이미지 비교를 통해 maker, part number, category, description 같은 필드를 수동으로 수정할 수 있다.
 
 - **Confirm Phase (`/api/v1/hybrid/index/confirm`)**  
   사용자가 승인하면 시스템은 indexing job을 비동기 큐에 넣는다. 이후 업로드 이미지는 처리되어 Milvus에 저장되고, task state는 polling으로 추적된다.
 
-[Insert Figure 3.3: User Interface demonstrating the Human-in-the-Loop preview and verification workflow]  
-*(작성 가이드: 업로드 화면과 preview/결과 확인 화면 스크린샷 2장 삽입)*
+[Insert Figure 3.4: Indexing upload and preview-confirm screens]  
+*(작성 가이드: 인덱싱 업로드 화면과 preview/confirm 결과 화면을 2장 패널 또는 3장 패널로 삽입)*
 
-**Figure 3.3. metadata preview, duplicate review, user confirmation을 포함하는 human-in-the-loop 인덱싱 워크플로우.**
+**Figure 3.4. 이미지 업로드, metadata draft 생성, duplicate review, user confirmation으로 이어지는 human-in-the-loop 인덱싱 워크플로우.**
 
 이 설계는 두 가지 역할을 한다. 첫째, 불확실한 AI 출력이 blind write-back 되는 위험을 줄인다. 둘째, 최종 human confirmation을 요구함으로써 indexed dataset의 품질을 더 안정적으로 유지한다.
 
@@ -87,6 +92,16 @@ query time에는 multimodal path와 lightweight path를 모두 지원한다.
 
 핵심 설계 원리는 graceful degradation이다. OCR이 실패하거나 비활성화되어도 image retrieval과 metadata-aware matching은 여전히 유용한 후보를 반환해야 한다. 반대로 pure visual similarity가 부족한 경우에는 lexical 및 identifier signal이 순위를 보강한다. 이러한 hybrid design은 noisy real-world image 조건에서 robustness를 높이기 위한 선택이다.
 
+[Insert Figure 3.5: Search page]  
+*(작성 가이드: 검색 입력 화면 전체를 단독 캡처로 삽입)*
+
+**Figure 3.5. 이미지 입력과 structured text input을 함께 사용하는 multimodal 검색 페이지.**
+
+[Insert Figure 3.6: Search results and evidence-backed shortlist]  
+*(작성 가이드: Top-K 결과, thumbnail, evidence section이 함께 보이는 결과 화면을 단독 또는 2장 패널로 삽입)*
+
+**Figure 3.6. multimodal query가 ranked candidate shortlist와 inspectable evidence로 이어지는 검색 결과 화면.**
+
 ## 3.6 Extended Services: Catalog and Agent Support
 
 핵심 retrieval pipeline은 두 가지 확장 서비스와 연결된다.
@@ -97,10 +112,15 @@ query time에는 multimodal path와 lightweight path를 모두 지원한다.
 - **Agent-Orchestrated Assistance**  
   agent layer는 hybrid search, catalog search, web search를 결합해 단순 retrieval만으로는 부족한 경우 더 넓은 evidence를 제공한다.
 
-[Insert Figure 3.4: Agent and catalog orchestration path]  
-*(작성 가이드: `docs/architecture/ARCHITECTURE_MERMAID.md`의 “5) Catalog + Agent Orchestration Path” 다이어그램 캡처본 또는 대응 UI 스크린샷 삽입)*
+[Insert Figure 3.7: Catalog interface]  
+*(작성 가이드: catalog 페이지 단독 캡처 삽입)*
 
-**Figure 3.4. core hybrid search를 넘어 catalog retrieval과 agent-assisted evidence expansion까지 연결되는 확장 오케스트레이션 경로.**
+**Figure 3.7. manual, PDF reference, supporting technical material에 대한 document-grounded lookup을 수행하는 catalog 화면.**
+
+[Insert Figure 3.8: Agent support interface]  
+*(작성 가이드: agent 페이지 단독 캡처 삽입. 필요하면 `docs/architecture/ARCHITECTURE_MERMAID.md`의 “5) Catalog + Agent Orchestration Path” 다이어그램을 보조 자료로 함께 사용)*
+
+**Figure 3.8. catalog retrieval, hybrid search, broader evidence gathering이 core retrieval workflow를 어떻게 확장하는지 보여주는 agent support 화면.**
 
 이 구성요소들은 retrieval benchmark의 유일한 초점은 아니지만, 시스템을 좁은 retrieval engine이 아니라 더 실용적인 listing-assistance workflow로 확장하는 역할을 한다.
 
