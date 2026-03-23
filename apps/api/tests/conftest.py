@@ -78,6 +78,17 @@ def _ensure_smart_match_stub() -> None:
 
     enc = types.ModuleType("smart_match.hybrid_search_pipeline.preprocessing.embedding.bge_m3_encoder")
     enc.BGEM3TextEncoder = BGEM3TextEncoder
+    ranking = types.ModuleType("smart_match.hybrid_search_pipeline.search.ranking_utils")
+    ranking.compute_exact_field_boost = lambda *_args, **_kwargs: 0.0
+    ranking.compute_lexical_score = lambda *_args, **_kwargs: 0.0
+    ranking.passes_min_score = lambda **_kwargs: True
+    metadata_normalizer = types.ModuleType("smart_match.hybrid_search_pipeline.preprocessing.metadata_normalizer")
+
+    class MetadataNormalizer:
+        def normalize(self, payload):
+            return dict(payload or {})
+
+    metadata_normalizer.MetadataNormalizer = MetadataNormalizer
 
     sys.modules["smart_match"] = smart_match
     sys.modules["smart_match.hybrid_search_pipeline"] = types.ModuleType("smart_match.hybrid_search_pipeline")
@@ -85,10 +96,15 @@ def _ensure_smart_match_stub() -> None:
     sys.modules["smart_match.hybrid_search_pipeline.preprocessing"] = types.ModuleType(
         "smart_match.hybrid_search_pipeline.preprocessing"
     )
+    sys.modules["smart_match.hybrid_search_pipeline.search"] = types.ModuleType(
+        "smart_match.hybrid_search_pipeline.search"
+    )
+    sys.modules["smart_match.hybrid_search_pipeline.search.ranking_utils"] = ranking
     sys.modules["smart_match.hybrid_search_pipeline.preprocessing.embedding"] = types.ModuleType(
         "smart_match.hybrid_search_pipeline.preprocessing.embedding"
     )
     sys.modules["smart_match.hybrid_search_pipeline.preprocessing.embedding.bge_m3_encoder"] = enc
+    sys.modules["smart_match.hybrid_search_pipeline.preprocessing.metadata_normalizer"] = metadata_normalizer
 
 
 def _ensure_pymilvus_stub() -> None:
@@ -167,7 +183,67 @@ def _ensure_pypdf_stub() -> None:
     sys.modules["pypdf"] = pypdf
 
 
+def _ensure_pypdfium2_stub() -> None:
+    if importlib.util.find_spec("pypdfium2") is not None:
+        return
+    pypdfium2 = types.ModuleType("pypdfium2")
+
+    class PdfDocument:
+        def __init__(self, *_args, **_kwargs):
+            self._pages = []
+
+        def __len__(self):
+            return len(self._pages)
+
+        def __getitem__(self, _index):
+            raise IndexError("stub PdfDocument has no pages")
+
+        def close(self):
+            return None
+
+    pypdfium2.PdfDocument = PdfDocument
+    sys.modules["pypdfium2"] = pypdfium2
+
+
+def _ensure_pillow_stub() -> None:
+    if importlib.util.find_spec("PIL") is not None:
+        return
+    pil_mod = types.ModuleType("PIL")
+
+    class _ImageObject:
+        size = (1, 1)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def convert(self, *_args, **_kwargs):
+            return self
+
+        def resize(self, *_args, **_kwargs):
+            return self
+
+        def save(self, *_args, **_kwargs):
+            return None
+
+    class ImageModule:
+        BICUBIC = 0
+        Resampling = types.SimpleNamespace(LANCZOS=0)
+
+        @staticmethod
+        def open(*_args, **_kwargs):
+            return _ImageObject()
+
+    pil_mod.Image = ImageModule
+    pil_mod.__version__ = "0.0"
+    sys.modules["PIL"] = pil_mod
+
+
 _ensure_torch_stub()
 _ensure_smart_match_stub()
 _ensure_pymilvus_stub()
 _ensure_pypdf_stub()
+_ensure_pypdfium2_stub()
+_ensure_pillow_stub()

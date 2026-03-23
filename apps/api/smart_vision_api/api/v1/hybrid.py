@@ -171,6 +171,35 @@ async def index_asset(
 
 
 @router.post(
+    "/index/bulk_zip",
+    response_model=HybridIndexResponse,
+    summary="Bulk index an items ZIP archive",
+)
+async def index_bulk_zip(
+    archive: UploadFile = File(..., description="ZIP archive containing items/<domain>/<item_id>/meta.json and images/*"),
+    _username: str = Depends(require_user),
+) -> HybridIndexResponse:
+    try:
+        logger.info(
+            "POST /hybrid/index/bulk_zip received: filename=%s content_type=%s",
+            archive.filename,
+            archive.content_type,
+        )
+        result = hybrid_service.index_bulk_zip_archive(archive)
+        logger.info(
+            "POST /hybrid/index/bulk_zip queued: task_id=%s job_type=%s",
+            result.get("task_id", ""),
+            result.get("job_type", ""),
+        )
+        return HybridIndexResponse(**result)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("POST /hybrid/index/bulk_zip failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post(
     "/search",
     response_model=HybridSearchResponse,
     summary="Hybrid multimodal search",

@@ -11,6 +11,22 @@ class HybridIndexResponse(BaseModel):
     status: str = Field(..., description="Index operation status message")
     model_id: Optional[str] = Field(None, description="Stored model identifier")
     task_id: Optional[str] = Field(None, description="Async indexing task identifier")
+    job_type: str = Field("single", description="Queued indexing job type")
+
+
+class HybridIndexTaskSummary(BaseModel):
+    total_items: int = Field(0, ge=0, description="Total discovered item directories in a bulk ZIP job")
+    processed_items: int = Field(0, ge=0, description="Number of items already processed")
+    indexed_items: int = Field(0, ge=0, description="Number of items indexed successfully")
+    failed_items: int = Field(0, ge=0, description="Number of items that failed during indexing")
+    recent_indexed_model_ids: List[str] = Field(
+        default_factory=list,
+        description="Recent successfully indexed model identifiers",
+    )
+    recent_errors: List[str] = Field(
+        default_factory=list,
+        description="Recent bulk ZIP indexing errors",
+    )
 
 
 class HybridIndexTaskResponse(BaseModel):
@@ -18,6 +34,8 @@ class HybridIndexTaskResponse(BaseModel):
     status: str = Field(..., description="Task status")
     model_id: Optional[str] = Field(None, description="Resolved/stored model identifier")
     detail: str = Field("", description="Human-readable task detail")
+    job_type: str = Field("single", description="Queued indexing job type")
+    summary: Optional[HybridIndexTaskSummary] = Field(None, description="Optional bulk indexing progress summary")
 
 
 class HybridMetadataDraft(BaseModel):

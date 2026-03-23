@@ -12,17 +12,20 @@ import base64
 import hashlib
 import json
 import os
+import posixpath
 import re
+import shutil
 import tempfile
 import time
 import uuid
+import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from collections import OrderedDict
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 from threading import Lock
-from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Iterable, Optional, Sequence, Tuple
 
 from fastapi import UploadFile
 from PIL import Image
@@ -77,7 +80,9 @@ class _IndexTask:
     task_id: str
     status: str
     model_id: str
+    job_type: str = "single"
     detail: str = ""
+    summary: Dict[str, Any] | None = None
     created_at: float = 0.0
     updated_at: float = 0.0
 
@@ -558,7 +563,7 @@ class HybridSearchService:
             for image_path in label_image_paths:
                 image_path.unlink(missing_ok=True)
 
-    def confirm_index_asset(self, *, image_b64_list: list[str], metadata: Dict[str, Any]) -> Dict[str, str]:
+    def confirm_index_asset(self, *, image_b64_list: list[str], metadata: Dict[str, Any]) -> Dict[str, Any]:
         cleaned = self._normalize_confirm_metadata(metadata)
         ocr_image_indices = self._normalize_ocr_image_indices(metadata.get("ocr_image_indices"), len(image_b64_list))
         model_id = cleaned.get("model_id", "").strip()
@@ -569,13 +574,40 @@ class HybridSearchService:
                 task_id=task_id,
                 status="queued",
                 model_id=model_id,
+                job_type="single",
                 detail="Indexing job queued.",
                 created_at=time.time(),
                 updated_at=time.time(),
             )
         )
         self._executor.submit(self._run_confirm_index_job, task_id, list(image_b64_list), dict(cleaned), ocr_image_indices)
-        return {"status": "queued", "model_id": model_id, "task_id": task_id}
+        return {"status": "queued", "model_id": model_id, "task_id": task_id, "job_type": "single"}
+
+    def index_bulk_zip_archive(self, archive: UploadFile) -> Dict[str, Any]:
+        filename = str(archive.filename or "").strip()
+        suffix = Path(filename).suffix.lower()
+        if suffix and suffix != ".zip":
+            raise ValueError("Only .zip archives are supported for bulk indexing.")
+
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+            shutil.copyfileobj(archive.file, tmp)
+            archive_path = Path(tmp.name)
+
+        task_id = uuid.uuid4().hex
+        self._set_task(
+            _IndexTask(
+                task_id=task_id,
+                status="queued",
+                model_id="",
+                job_type="bulk_zip",
+                detail="Bulk ZIP indexing job queued.",
+                summary=self._build_bulk_summary(total_items=0, processed_items=0, indexed_model_ids=[], errors=[]),
+                created_at=time.time(),
+                updated_at=time.time(),
+            )
+        )
+        self._executor.submit(self._run_bulk_zip_index_job, task_id, archive_path, filename or archive_path.name)
+        return {"status": "queued", "task_id": task_id, "job_type": "bulk_zip"}
 
     def get_index_task(self, task_id: str) -> Dict[str, Any]:
         with self._tasks_lock:
@@ -588,6 +620,8 @@ class HybridSearchService:
             "status": task.status,
             "model_id": task.model_id or None,
             "detail": task.detail,
+            "job_type": task.job_type,
+            "summary": task.summary,
         }
 
     def index_model_metadata(self, metadata: Dict[str, str]) -> Dict[str, str]:
@@ -737,6 +771,130 @@ class HybridSearchService:
             if 0 <= index < image_count and index not in cleaned:
                 cleaned.append(index)
         return cleaned
+
+    @staticmethod
+    def _build_bulk_summary(
+        *,
+        total_items: int,
+        processed_items: int,
+        indexed_model_ids: Sequence[str],
+        errors: Sequence[str],
+        preview_limit: int = 8,
+    ) -> Dict[str, Any]:
+        recent_indexed = [str(item).strip() for item in indexed_model_ids if str(item).strip()][-preview_limit:]
+        recent_errors = [str(item).strip() for item in errors if str(item).strip()][-preview_limit:]
+        return {
+            "total_items": max(0, int(total_items)),
+            "processed_items": max(0, int(processed_items)),
+            "indexed_items": len(indexed_model_ids),
+            "failed_items": len(errors),
+            "recent_indexed_model_ids": recent_indexed,
+            "recent_errors": recent_errors,
+        }
+
+    @staticmethod
+    def _is_hidden_bulk_path(path: Path) -> bool:
+        return any(part.startswith(".") or part == "__MACOSX" for part in path.parts)
+
+    @staticmethod
+    def _join_bulk_description(*values: object) -> str:
+        merged: list[str] = []
+        for raw in values:
+            text = str(raw or "").strip()
+            if not text:
+                continue
+            lowered = text.lower()
+            if any(lowered == existing.lower() for existing in merged):
+                continue
+            merged.append(text)
+        return "\n".join(merged)
+
+    def _extract_bulk_zip_archive(self, archive_path: Path, extract_root: Path) -> None:
+        extract_root = extract_root.resolve()
+        with zipfile.ZipFile(archive_path) as archive:
+            members = [member for member in archive.infolist() if not member.is_dir()]
+            if not members:
+                raise ValueError("ZIP archive is empty.")
+            for member in members:
+                normalized = posixpath.normpath((member.filename or "").replace("\\", "/"))
+                if normalized in {"", ".", ".."}:
+                    continue
+                if normalized.startswith("../") or normalized.startswith("/"):
+                    raise ValueError("ZIP archive contains an unsafe path.")
+                relative_parts = [part for part in normalized.split("/") if part not in ("", ".")]
+                if not relative_parts or any(part == ".." for part in relative_parts):
+                    raise ValueError("ZIP archive contains an unsafe path.")
+
+                relative_path = Path(*relative_parts)
+                if self._is_hidden_bulk_path(relative_path):
+                    continue
+
+                target_path = (extract_root / relative_path).resolve()
+                try:
+                    target_path.relative_to(extract_root)
+                except ValueError as exc:
+                    raise ValueError("ZIP archive extraction escaped the target directory.") from exc
+
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(member, "r") as source, open(target_path, "wb") as destination:
+                    shutil.copyfileobj(source, destination)
+
+    def _discover_bulk_item_dirs(self, extract_root: Path) -> list[Path]:
+        item_dirs = {
+            meta_path.parent
+            for meta_path in extract_root.rglob("meta.json")
+            if meta_path.is_file() and not self._is_hidden_bulk_path(meta_path.relative_to(extract_root))
+        }
+        return sorted(item_dirs, key=lambda path: path.as_posix())
+
+    @staticmethod
+    def _load_bulk_item_meta(item_dir: Path) -> Dict[str, Any]:
+        meta_path = item_dir / "meta.json"
+        if not meta_path.is_file():
+            raise FileNotFoundError(f"meta.json not found in {item_dir}")
+        try:
+            payload = json.loads(meta_path.read_text(encoding="utf-8"))
+        except UnicodeDecodeError:
+            payload = json.loads(meta_path.read_text(encoding="utf-8-sig"))
+        if not isinstance(payload, dict):
+            raise ValueError(f"meta.json must contain an object: {meta_path}")
+        return payload
+
+    @classmethod
+    def _normalize_bulk_item_metadata(cls, item_dir: Path, meta: Dict[str, Any]) -> Dict[str, str]:
+        model_id = str(meta.get("item_id") or meta.get("model_id") or item_dir.name).strip()
+        if not model_id:
+            raise ValueError(f"model_id could not be resolved from {item_dir / 'meta.json'}")
+
+        title = str(meta.get("title") or "").strip()
+        description = str(meta.get("description") or "").strip()
+        product_info = str(meta.get("product_info") or "").strip()
+        category = str(meta.get("subcategory") or meta.get("category") or meta.get("domain") or "").strip()
+
+        metadata: Dict[str, str] = {
+            "model_id": model_id,
+            "maker": str(meta.get("maker") or "").strip(),
+            "part_number": str(meta.get("part_number") or "").strip(),
+            "category": category,
+            "description": cls._join_bulk_description(title, description, product_info),
+        }
+        if product_info:
+            metadata["product_info"] = product_info
+        price_value = meta.get("price_value")
+        if price_value not in (None, ""):
+            metadata["price_text"] = str(price_value).strip()
+        return metadata
+
+    @staticmethod
+    def _resolve_bulk_item_images(item_dir: Path) -> list[Path]:
+        allowed_suffixes = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
+        image_dir = item_dir / "images"
+        candidates: list[Path] = []
+        if image_dir.exists() and image_dir.is_dir():
+            candidates = [path for path in image_dir.rglob("*") if path.is_file() and path.suffix.lower() in allowed_suffixes]
+        if not candidates:
+            candidates = [path for path in item_dir.rglob("*") if path.is_file() and path.suffix.lower() in allowed_suffixes]
+        return sorted(candidates, key=lambda path: path.as_posix())
 
     def _suggest_metadata_from_images(
         self,
@@ -1279,6 +1437,137 @@ class HybridSearchService:
             for image_path in image_paths:
                 image_path.unlink(missing_ok=True)
 
+    def _run_bulk_zip_index_job(self, task_id: str, archive_path: Path, archive_name: str) -> None:
+        extract_root = Path(tempfile.mkdtemp(prefix="hybrid-bulk-zip-"))
+        indexed_model_ids: list[str] = []
+        errors: list[str] = []
+        total_items = 0
+        current_model_id = ""
+        try:
+            self._update_task(
+                task_id,
+                status="running",
+                detail=f"Extracting ZIP archive: {archive_name}.",
+                summary=self._build_bulk_summary(
+                    total_items=0,
+                    processed_items=0,
+                    indexed_model_ids=indexed_model_ids,
+                    errors=errors,
+                ),
+            )
+            self._extract_bulk_zip_archive(archive_path, extract_root)
+            item_dirs = self._discover_bulk_item_dirs(extract_root)
+            total_items = len(item_dirs)
+            if not item_dirs:
+                raise ValueError(
+                    "No valid items were found in the ZIP archive. Expected items/<domain>/<item_id>/meta.json and images/*."
+                )
+
+            self._update_task(
+                task_id,
+                status="running",
+                detail=f"Discovered {total_items} item(s) in ZIP archive.",
+                summary=self._build_bulk_summary(
+                    total_items=total_items,
+                    processed_items=0,
+                    indexed_model_ids=indexed_model_ids,
+                    errors=errors,
+                ),
+            )
+
+            for index, item_dir in enumerate(item_dirs, start=1):
+                current_model_id = item_dir.name
+                try:
+                    meta = self._load_bulk_item_meta(item_dir)
+                    metadata = self._normalize_bulk_item_metadata(item_dir, meta)
+                    current_model_id = metadata["model_id"]
+                    image_paths = self._resolve_bulk_item_images(item_dir)
+                    if not image_paths:
+                        raise FileNotFoundError(f"No image files found in {item_dir / 'images'}")
+
+                    self._update_task(
+                        task_id,
+                        status="running",
+                        model_id=current_model_id,
+                        detail=f"Indexing item {index}/{total_items}: {current_model_id} ({len(image_paths)} image(s)).",
+                        summary=self._build_bulk_summary(
+                            total_items=total_items,
+                            processed_items=len(indexed_model_ids) + len(errors),
+                            indexed_model_ids=indexed_model_ids,
+                            errors=errors,
+                        ),
+                    )
+
+                    model_record = self.orchestrator.index_model_metadata(current_model_id, metadata)
+                    for image_index, image_path in enumerate(image_paths, start=1):
+                        self._update_task(
+                            task_id,
+                            status="running",
+                            model_id=current_model_id,
+                            detail=f"Indexing item {index}/{total_items}: {current_model_id} image {image_index}/{len(image_paths)}.",
+                            summary=self._build_bulk_summary(
+                                total_items=total_items,
+                                processed_items=len(indexed_model_ids) + len(errors),
+                                indexed_model_ids=indexed_model_ids,
+                                errors=errors,
+                            ),
+                        )
+                        model_record = self.orchestrator.preprocess_and_index(
+                            image_path,
+                            metadata,
+                            model_record=model_record,
+                            refresh_model_metadata=False,
+                        )
+                    indexed_model_ids.append(current_model_id)
+                except Exception as exc:
+                    logger.exception("Bulk ZIP indexing failed for model_id=%s", current_model_id)
+                    errors.append(f"{current_model_id}: {exc}")
+                finally:
+                    processed_items = len(indexed_model_ids) + len(errors)
+                    self._update_task(
+                        task_id,
+                        status="running",
+                        model_id=current_model_id,
+                        detail=f"Processed {processed_items}/{total_items} item(s).",
+                        summary=self._build_bulk_summary(
+                            total_items=total_items,
+                            processed_items=processed_items,
+                            indexed_model_ids=indexed_model_ids,
+                            errors=errors,
+                        ),
+                    )
+
+            processed_items = len(indexed_model_ids) + len(errors)
+            self._update_task(
+                task_id,
+                status="completed",
+                model_id="",
+                detail=f"Bulk ZIP indexing completed: {len(indexed_model_ids)} indexed, {len(errors)} failed.",
+                summary=self._build_bulk_summary(
+                    total_items=total_items,
+                    processed_items=processed_items,
+                    indexed_model_ids=indexed_model_ids,
+                    errors=errors,
+                ),
+            )
+        except Exception as exc:
+            logger.exception("Bulk ZIP indexing job failed: task_id=%s error=%s", task_id, exc)
+            self._update_task(
+                task_id,
+                status="failed",
+                model_id=current_model_id,
+                detail=str(exc),
+                summary=self._build_bulk_summary(
+                    total_items=total_items,
+                    processed_items=len(indexed_model_ids) + len(errors),
+                    indexed_model_ids=indexed_model_ids,
+                    errors=errors,
+                ),
+            )
+        finally:
+            archive_path.unlink(missing_ok=True)
+            shutil.rmtree(extract_root, ignore_errors=True)
+
     def _set_task(self, task: _IndexTask) -> None:
         with self._tasks_lock:
             self._tasks[task.task_id] = task
@@ -1286,7 +1575,15 @@ class HybridSearchService:
             while len(self._tasks) > self._max_tasks:
                 self._tasks.popitem(last=False)
 
-    def _update_task(self, task_id: str, *, status: str, detail: str, model_id: str | None = None) -> None:
+    def _update_task(
+        self,
+        task_id: str,
+        *,
+        status: str,
+        detail: str,
+        model_id: str | None = None,
+        summary: Dict[str, Any] | None = None,
+    ) -> None:
         with self._tasks_lock:
             task = self._tasks.get(task_id)
             if task is None:
@@ -1295,6 +1592,8 @@ class HybridSearchService:
             task.detail = detail
             if model_id is not None:
                 task.model_id = model_id
+            if summary is not None:
+                task.summary = dict(summary)
             task.updated_at = time.time()
             self._tasks.move_to_end(task_id)
 
