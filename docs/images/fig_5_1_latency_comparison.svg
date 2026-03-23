@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="560" viewBox="0 0 920 560" role="img" aria-labelledby="title desc">
+  <title id="title">Figure 5.1. Mean End-to-End Latency Across Retrieval Configurations</title>
+  <desc id="desc">Bar chart comparing mean total latency for C2, C4, and C3. C2 is 8.24 seconds, C4 is 1.42 seconds, and C3 is 0.73 seconds.</desc>
+
+  <rect width="920" height="560" fill="#ffffff"/>
+  <rect x="90" y="80" width="780" height="390" fill="#faf8f3" rx="10"/>
+
+  <g font-family="Helvetica, Arial, sans-serif" fill="#1f1f1f">
+    <text x="460" y="38" text-anchor="middle" font-size="24" font-weight="700">
+      Figure 5.1. Mean End-to-End Latency Across Retrieval Configurations
+    </text>
+    <text x="460" y="62" text-anchor="middle" font-size="13">
+      Lower values indicate a more interactive search experience.
+    </text>
+  </g>
+
+  <g stroke="#2b2b2b" stroke-width="2">
+    <line x1="120" y1="440" x2="840" y2="440"/>
+    <line x1="120" y1="120" x2="120" y2="440"/>
+  </g>
+
+  <g stroke="#c8c8c8" stroke-width="1" stroke-dasharray="5 5">
+    <line x1="120" y1="440" x2="840" y2="440"/>
+    <line x1="120" y1="369" x2="840" y2="369"/>
+    <line x1="120" y1="298" x2="840" y2="298"/>
+    <line x1="120" y1="227" x2="840" y2="227"/>
+    <line x1="120" y1="156" x2="840" y2="156"/>
+  </g>
+
+  <g font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#3a3a3a">
+    <text x="108" y="444" text-anchor="end">0</text>
+    <text x="108" y="373" text-anchor="end">2</text>
+    <text x="108" y="302" text-anchor="end">4</text>
+    <text x="108" y="231" text-anchor="end">6</text>
+    <text x="108" y="160" text-anchor="end">8</text>
+    <text x="62" y="280" text-anchor="middle" transform="rotate(-90 62 280)">Mean Total Latency (seconds)</text>
+  </g>
+
+  <g>
+    <rect x="210" y="147" width="110" height="293" fill="#b23a48" stroke="#2b2b2b" stroke-width="1.5"/>
+    <rect x="405" y="390" width="110" height="50" fill="#e09f3e" stroke="#2b2b2b" stroke-width="1.5"/>
+    <rect x="600" y="414" width="110" height="26" fill="#2a9d8f" stroke="#2b2b2b" stroke-width="1.5"/>
+  </g>
+
+  <g font-family="Helvetica, Arial, sans-serif" fill="#1f1f1f">
+    <text x="265" y="135" text-anchor="middle" font-size="16" font-weight="700">8.24 s</text>
+    <text x="460" y="378" text-anchor="middle" font-size="16" font-weight="700">1.42 s</text>
+    <text x="655" y="402" text-anchor="middle" font-size="16" font-weight="700">0.73 s</text>
+
+    <text x="265" y="468" text-anchor="middle" font-size="16" font-weight="700">C2</text>
+    <text x="460" y="468" text-anchor="middle" font-size="16" font-weight="700">C4</text>
+    <text x="655" y="468" text-anchor="middle" font-size="16" font-weight="700">C3</text>
+
+    <text x="265" y="489" text-anchor="middle" font-size="12">OCR ON, Reranker ON</text>
+    <text x="460" y="489" text-anchor="middle" font-size="12">OCR OFF, Reranker ON</text>
+    <text x="655" y="489" text-anchor="middle" font-size="12">OCR OFF, Reranker OFF</text>
+  </g>
+
+  <g stroke="#2a9d8f" stroke-width="2" fill="none">
+    <line x1="752" y1="315" x2="682" y2="408"/>
+  </g>
+  <g font-family="Helvetica, Arial, sans-serif" fill="#1f1f1f">
+    <text x="760" y="300" font-size="13" font-weight="700">Practical default under</text>
+    <text x="760" y="318" font-size="13" font-weight="700">current runtime constraints</text>
+  </g>
+</svg>
