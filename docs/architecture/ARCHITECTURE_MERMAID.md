@@ -6,101 +6,101 @@
 
 ```mermaid
 flowchart TD
-  U[1. User] --> W[2. apps/web]
-  W -->|JWT + JSON/FormData| API[3. apps/api FastAPI]
+  U["1. User"] --> W["2. apps/web"]
+  W -->|"JWT + JSON/FormData"| API["3. apps/api FastAPI"]
 
-  API --> R1[3-1. Hybrid API]
-  API --> R2[3-2. Catalog API]
-  API --> R3[3-3. Agent API]
+  API --> R1["3-1. Hybrid API"]
+  API --> R2["3-2. Catalog API"]
+  API --> R3["3-3. Agent API"]
 
-  R1 --> M[4. packages/model smart_match]
+  R1 --> M["4. packages model smart_match"]
   R3 --> M
-  R2 --> C[4-2. Catalog Service]
+  R2 --> C["4-2. Catalog Service"]
 
   subgraph MODEL["Model Core"]
-    M --> P[Preprocessing]
-    P --> O[OCR]
-    P --> VI[Image Embedding Qwen3-VL]
-    P --> VT[Text Embedding BGE-M3]
-    P --> CAP[Captioning Optional]
-    M --> F[Fusion + lexical/spec scoring]
+    M --> P["Preprocessing"]
+    P --> O["OCR"]
+    P --> VI["Image Embedding: Qwen3-VL"]
+    P --> VT["Text Embedding: BGE-M3"]
+    P --> CAP["Captioning Optional"]
+    M --> F["Fusion and lexical/spec scoring"]
   end
 
-  F --> DB[(5. Milvus Collections)]
+  F --> DB[("5. Milvus Collections")]
   C --> DB
   DB --> API
   API --> W
   W --> U
 
-  R3 --> EXT1[OpenAI Optional]
-  R3 --> EXT2[Web/gparts Optional]
+  R3 --> EXT1["OpenAI Optional"]
+  R3 --> EXT2["Web or gparts Optional"]
 ```
 
 ## 2) Frontend 상세 (`apps/web`)
 
 ```mermaid
 flowchart LR
-  B[Browser] --> APP[src/App.tsx]
-  APP --> AUTH[auth state]
-  AUTH --> LAYOUT[AppShellLayout]
+  B["Browser"] --> APP["src/App.tsx"]
+  APP --> AUTH["auth state"]
+  AUTH --> LAYOUT["AppShellLayout"]
 
-  LAYOUT --> IDX[IndexPage]
-  LAYOUT --> SRCH[SearchPage]
-  LAYOUT --> CHAT[AgentChatPage]
-  LAYOUT --> CAT[CatalogPage]
+  LAYOUT --> IDX["IndexPage"]
+  LAYOUT --> SRCH["SearchPage"]
+  LAYOUT --> CHAT["AgentChatPage"]
+  LAYOUT --> CAT["CatalogPage"]
 
-  IDX --> U[src/utils/api.ts]
+  IDX --> U["src/utils/api.ts"]
   SRCH --> U
   CHAT --> U
   CAT --> U
 
-  U --> H1[/api/v1/hybrid/index/preview]
-  U --> H1B[/api/v1/hybrid/index/confirm]
-  U --> H1C[/api/v1/hybrid/index/tasks/{task_id}]
-  U --> H2[/api/v1/hybrid/search]
-  U --> H3[/api/v1/agent/chat]
-  U --> H4[/api/v1/catalog/index_pdf]
-  U --> H5[/api/v1/catalog/search]
+  U --> H1["/api/v1/hybrid/index/preview"]
+  U --> H1B["/api/v1/hybrid/index/confirm"]
+  U --> H1C["/api/v1/hybrid/index/tasks/<task_id>"]
+  U --> H2["/api/v1/hybrid/search"]
+  U --> H3["/api/v1/agent/chat"]
+  U --> H4["/api/v1/catalog/index_pdf"]
+  U --> H5["/api/v1/catalog/search"]
 
-  H1 --> V1[Metadata preview + duplicate candidate]
-  H1B --> V1B[Queued indexing task]
-  H1C --> V1C[Task status polling]
-  H2 --> V2[Top-K results + scores]
-  H3 --> V3[Answer + sources + identified]
-  H5 --> V4[Catalog chunk list + source/page]
+  H1 --> V1["Metadata preview and duplicate candidate"]
+  H1B --> V1B["Queued indexing task"]
+  H1C --> V1C["Task status polling"]
+  H2 --> V2["Top-K results and scores"]
+  H3 --> V3["Answer, sources, and identified item"]
+  H5 --> V4["Catalog chunk list and source-page data"]
 ```
 
 ## 3) Model 상세 (`packages/model/smart_match`)
 
 ```mermaid
 flowchart TD
-  INI[Index request image+metadata] --> ORCH[HybridSearchOrchestrator]
-  INS[Search request image/text] --> ORCH
+  INI["Index request: image and metadata"] --> ORCH["HybridSearchOrchestrator"]
+  INS["Search request: image or text"] --> ORCH
 
-  ORCH --> NORM[MetadataNormalizer]
-  ORCH --> OCR[OCR Pipeline]
-  ORCH --> IMG[Qwen3VLImageEncoder]
-  ORCH --> TXT[BGEM3TextEncoder]
-  ORCH --> CAP[Captioner Optional]
+  ORCH --> NORM["MetadataNormalizer"]
+  ORCH --> OCR["OCR Pipeline"]
+  ORCH --> IMG["Qwen3VLImageEncoder"]
+  ORCH --> TXT["BGEM3TextEncoder"]
+  ORCH --> CAP["Captioner Optional"]
 
-  NORM --> IDX[HybridMilvusIndex]
+  NORM --> IDX["HybridMilvusIndex"]
   OCR --> IDX
   IMG --> IDX
   TXT --> IDX
   CAP --> IDX
 
-  IDX --> COL[(image_parts/text_parts/attrs_parts/model_texts/caption_parts)]
-  ORCH --> CNT[MilvusCounterStore]
-  CNT --> SQL[(Local SQLite counter namespace)]
+  IDX --> COL[("image, text, attrs, model_texts, caption collections")]
+  ORCH --> CNT["MilvusCounterStore"]
+  CNT --> SQL[("Local SQLite counter namespace")]
 
-  COL --> SCORE[Dense score image/ocr/caption/text]
-  ORCH --> LEX[Lexical score]
-  ORCH --> SPEC[Spec match score]
+  COL --> SCORE["Dense score from image, OCR, caption, and text"]
+  ORCH --> LEX["Lexical score"]
+  ORCH --> SPEC["Spec match score"]
 
-  SCORE --> FINAL[Final score blend]
+  SCORE --> FINAL["Final score blend"]
   LEX --> FINAL
   SPEC --> FINAL
-  FINAL --> OUT[Top-K models + metadata + image list]
+  FINAL --> OUT["Top-K models, metadata, and image list"]
 ```
 
 ## 4) Sequence 상세 (`/api/v1/hybrid/index/preview` + `/api/v1/hybrid/index/confirm`)
@@ -109,28 +109,28 @@ flowchart TD
 sequenceDiagram
   autonumber
   actor User
-  participant Web as apps/web IndexPage
-  participant API as apps/api /hybrid/index/*
-  participant HS as services/hybrid.py
-  participant Orch as HybridSearchOrchestrator
-  participant Pre as Preprocessing Pipeline
-  participant Milvus as Milvus
+  participant Web as "apps/web IndexPage"
+  participant API as "apps/api hybrid index endpoints"
+  participant HS as "services/hybrid.py"
+  participant Orch as "HybridSearchOrchestrator"
+  participant Pre as "Preprocessing Pipeline"
+  participant Milvus as "Milvus"
 
   User->>Web: 이미지 업로드 후 preview 실행
-  Web->>API: POST /index/preview (images + optional metadata + optional label images)
-  API->>HS: preview_index_asset(images, draft)
-  HS-->>API: metadata draft + optional duplicate candidate
+  Web->>API: POST index preview with images and optional metadata
+  API->>HS: preview_index_asset images and draft
+  HS-->>API: metadata draft and optional duplicate candidate
   API-->>Web: preview response
-  User->>Web: 필드 수정 + 새 모델/기존 모델 선택 후 confirm
-  Web->>API: POST /index/confirm (images + confirmed metadata)
-  API->>HS: confirm_index_asset(images, metadata)
-  HS->>Orch: preprocess_and_index(tmp_image, metadata+pk/model_id)
-  Orch->>Pre: OCR + image/text/caption embedding
-  Pre-->>Orch: vectors + normalized metadata
-  Orch->>Milvus: upsert image_parts/text_parts/attrs_parts/model_texts/caption_parts
+  User->>Web: 필드 수정 후 confirm 실행
+  Web->>API: POST index confirm with images and confirmed metadata
+  API->>HS: confirm_index_asset images and metadata
+  HS->>Orch: preprocess_and_index temp image and metadata
+  Orch->>Pre: OCR and image text caption embedding
+  Pre-->>Orch: vectors and normalized metadata
+  Orch->>Milvus: upsert image text attrs model text and caption collections
   Milvus-->>Orch: insert/flush OK
-  Orch-->>HS: task created / indexing executed in background
-  HS-->>API: {"status":"queued","task_id":"..."}
+  Orch-->>HS: task created and indexing executed in background
+  HS-->>API: queued task response
   API-->>Web: 200 OK
   Web-->>User: 작업 상태 polling 시작
 ```
