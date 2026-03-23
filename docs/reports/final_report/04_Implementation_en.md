@@ -30,27 +30,43 @@ Milvus was used as the core retrieval store because the system needed to search 
 4. **Attribute records** containing structured metadata such as `maker`, `part_number`, `category`, and `image_path`.
 5. **Model-level text vectors** representing merged metadata and text evidence at the part/model level.
 
-This structure allows the system to combine dense retrieval with metadata-aware scoring. In practical terms, the backend can search for visually similar items while also boosting candidates that match lexical or identifier evidence such as part numbers.
+This is therefore a multi-collection Milvus design rather than a single-table inventory schema. The implementation-level layout is summarised in Table 4.1.
+
+**Table 4.1. Milvus collection layout used by the hybrid retrieval pipeline**
+
+| Collection role | Current collection family | Main contents | Vector/index strategy |
+| --- | --- | --- | --- |
+| Image retrieval | `qwen3_vl_image_parts` | Primary image embeddings from Qwen3-VL | Runtime-defined image embedding dimension, `HNSW + COSINE` |
+| OCR/text retrieval | `bge_m3_text_parts` | OCR-derived or metadata-derived text embeddings | `1024`-dimensional text vectors, `HNSW + COSINE` |
+| Caption retrieval | `bge_m3_caption_parts` | Caption-text embeddings | `1024`-dimensional text vectors, `HNSW + COSINE` |
+| Model-level retrieval | `bge_m3_model_texts` | Merged model text, metadata text, caption text, OCR text | `1024`-dimensional text vectors, `HNSW + COSINE` |
+| Structured attributes | `attrs_parts_v2` | `maker`, `part_number`, `category`, `image_path`, and related metadata | Lightweight attribute collection with a small vector placeholder, `FLAT + L2` |
+
+*Table note:* The image-vector dimensionality is determined by the active Qwen3-VL encoder at runtime, whereas the BGE-M3 text path is configured around a `1024`-dimensional embedding space.
+
+This structure allows the system to combine dense retrieval with metadata-aware scoring. In practical terms, the backend can search for visually similar items while also boosting candidates that match lexical or identifier evidence such as part numbers. It also keeps the text-only search path lightweight by allowing the API to query a model-level text collection without invoking the full multimodal path.
 
 An additional implementation detail is that `model_id` counters are no longer managed inside Milvus itself. Instead, the counter namespace is maintained locally through a lightweight SQLite-backed mechanism, which simplified single-node experimentation.
 
-## 4.3 AI Model Integration and Orchestration
+## 4.3 AI Model Integration and Orchestration Pipeline
 
-The model layer integrates several components into a single orchestrated pipeline:
+Identifying an industrial part from a single user-generated image is rarely a straightforward classification task. In practice, the evidence needed for a correct match is distributed across global visual form, embedded text, normalized metadata, caption-like descriptions, and the user's own query terms. For that reason, the model layer was implemented as an orchestrated pipeline inside `packages/model` rather than as a single monolithic classifier.
 
-1. **Qwen3-VL Image Encoder**  
-   Used as the primary image representation model. It provides the main dense image embedding used in hybrid retrieval.
+The orchestration layer integrates the following core components:
 
-2. **BGE-M3 Text Encoder**  
-   Used for metadata text, OCR-derived text, captions, and text-only search. This makes it possible to search not only by image similarity but also by short alphanumeric identifiers and structured listing fields.
+1. **Qwen3-VL Image Encoder (Primary Visual Perception)**  
+   Qwen3-VL serves as the primary visual engine. It generates the dense image representation used for hybrid retrieval and captures global shape, material cues, layout, and visually embedded identifier regions.
 
-3. **PaddleOCR**  
-   Included as an optional OCR component. The implementation deliberately allows OCR to be enabled or disabled through runtime flags because OCR can improve evidence recovery in some cases while also introducing latency and noise in others.
+2. **BGE-M3 Text Encoder (Semantic and Lexical Embedding)**  
+   BGE-M3 is used for OCR-derived text, user-facing metadata, merged model text, captions, and text-only search. This makes it possible to search not only by visual similarity but also by short alphanumeric identifiers and listing-oriented metadata fields.
 
-4. **Captioning Layer**  
-   Caption generation can use either GPT or a Qwen captioner depending on runtime mode. Caption text is then embedded and used as an additional semantic signal.
+3. **PaddleOCR (Conditional Text Extraction)**  
+   OCR is implemented as an optional component rather than a fixed mandatory stage. The runtime exposes separate switches for indexing-time and query-time OCR so that the system can balance evidence recovery against noise and latency depending on the operating mode.
 
-The orchestration layer combines these outputs rather than treating any single model as the final decision-maker. This was essential because industrial-part identification often depends on partial evidence distributed across visual form, embedded text, metadata, and user query text [1], [2], [9].
+4. **Contextual Captioning Layer**  
+   Caption generation can use either GPT or a local Qwen captioner depending on runtime mode and environment configuration. The generated caption is then embedded by BGE-M3 and used as an additional human-readable semantic signal.
+
+The main engineering challenge was therefore not simply loading several models, but synchronising them into a single preprocessing and search stack. In the current implementation, `PreprocessingPipeline` acts as the central coordinator: it routes the image to the visual encoder, invokes caption generation when enabled, calls OCR when configured, normalises the extracted fields, and returns a standardised record that can be indexed or queried against Milvus. This orchestration design was essential because industrial-part identification often depends on partial evidence distributed across visual form, embedded text, metadata, and user query text [1], [2], [9].
 
 [Insert Figure 4.2: Code snippet illustrating the multimodal retrieval stack]  
 
@@ -73,19 +89,27 @@ self.preprocessing = PreprocessingPipeline(
 )
 ```
 
-*Figure note:* This snippet summarises the multimodal preprocessing stack. The actual implementation also includes collection setup, duplicate-aware ingestion, optional reranking, and task management.
+*Figure note:* This snippet summarises the multimodal preprocessing stack. The actual implementation also includes collection setup, metadata normalisation, duplicate-aware ingestion, optional reranking, and task management.
 
-## 4.4 Asynchronous Indexing and the Preview-Confirm Backend
+## 4.4 Asynchronous Indexing and the Preview-Confirm Backend Architecture
 
-To support the human-in-the-loop listing workflow, indexing was implemented as a preview-confirm sequence rather than an immediate write operation.
+A core implementation challenge was reconciling heavy machine-learning inference with the responsiveness expected from a modern web application. Image decoding, caption generation, embedding creation, and Milvus upserts are materially slower than ordinary request validation or CRUD-style API handling. If all of that work were performed inline in a single confirm request, the interface would feel unresponsive and the indexing workflow would become fragile under repeated uploads.
 
-- In the **preview step**, uploaded images are decoded temporarily, metadata is drafted, and a possible duplicate candidate may be returned.
-- In the **confirm step**, the final metadata is normalised and the indexing job is queued asynchronously.
-- The frontend then polls the task endpoint until the job succeeds or fails.
+To mitigate this, the backend was implemented around a decoupled preview-confirm architecture that directly supports the human-in-the-loop workflow.
 
-This design keeps the interface responsive and avoids blocking the user while image decoding, embedding generation, and Milvus upserts are executed.
+### 4.4.1 The Preview-Confirm Workflow
 
-Unlike a simple `FastAPI BackgroundTasks` pattern, the current implementation uses an internal `ThreadPoolExecutor`-based queue and an in-memory task registry to track job state.
+The indexing flow is divided into two backend phases:
+
+- In the **preview step**, uploaded images are decoded temporarily, draft metadata is generated, and a possible duplicate candidate may be returned when the draft identifiers match an existing indexed part.
+- In the **confirm step**, the user-reviewed metadata is normalised and the heavier indexing job is placed onto an asynchronous queue instead of being executed inline.
+- After confirmation, the frontend polls the task endpoint until the job reaches a terminal state.
+
+This structure keeps the UI responsive while still preserving a reviewable human-in-the-loop checkpoint before new data is written into the index.
+
+### 4.4.2 Queueing Model and Task-State Tracking
+
+Unlike a simple `FastAPI BackgroundTasks` pattern, the current implementation uses an internal `ThreadPoolExecutor`-based queue together with an in-memory task registry. This design was sufficient for the prototype setting because it provided non-blocking confirm behaviour without introducing the extra infrastructure overhead of a separate broker-backed task system.
 
 ```python
 task_id = uuid.uuid4().hex
@@ -109,33 +133,89 @@ self._executor.submit(
 return {"status": "queued", "model_id": model_id, "task_id": task_id}
 ```
 
-*Figure note:* This snippet shows the core confirm-stage queueing logic. It illustrates that the API returns immediately with a `task_id`, while the heavier indexing job continues in the background.
+*Figure note:* This snippet shows the core confirm-stage queueing logic. The API returns immediately with a `task_id`, while the heavier indexing job continues in the background and the frontend tracks progress by polling the task endpoint.
 
-## 4.5 Search Implementation
+## 4.5 Search Implementation and Hybrid Retrieval Routing
 
-The search path supports two broad modes:
+The core application behaviour depends on how search requests are routed through the retrieval stack. In practice, user inputs vary widely: some users provide only a blurry photo, others provide an image together with drafted metadata, and others simply search by a known part number. To support these cases without forcing every request through the most expensive path, the implementation exposes two broad search routes:
 
-- **Multimodal search** for image-plus-text or image-only requests, where image embeddings, optional OCR text, caption-derived text, lexical overlap, and exact identifier boosts are fused.
-- **Lightweight text-only search** for text-driven requests, where a smaller BGE-M3-driven model-level retrieval path is used without invoking the full multimodal stack.
+- **Full multimodal search (the heavy path)** for image-driven requests, optionally accompanied by query text. This route fuses image embeddings, optional OCR text, caption-derived semantics, lexical overlap, and exact identifier boosts.
+- **Lightweight text-only search (the fast path)** for text-driven requests with no visual input. In this mode the API queries the smaller BGE-M3-driven model-level text collection directly, avoiding the full multimodal preprocessing stack.
 
-The implementation also includes ranking controls such as lexical matching improvements, exact substring boosting, and low-score filtering. These adjustments were important in practice because industrial-part retrieval can fail not only from weak embeddings, but also from overly permissive ranking when exact identifiers are present but underweighted.
+The implementation also includes explicit ranking controls such as lexical matching improvements, exact substring boosting, and low-score filtering. These adjustments were important in practice because industrial-part retrieval can fail not only from weak embeddings, but also from overly permissive ranking when exact identifiers are present but underweighted.
+
+### 4.5.1 Hybrid Scoring Logic
+
+At a high level, the retrieval pipeline first gathers candidate models from multiple evidence channels and then computes a base dense score before applying metadata-aware adjustments. The base dense score is computed as a weighted fusion of image, OCR-text, and caption similarities:
+
+\[
+\text{dense\_score} =
+\frac{\alpha \cdot s_{\text{image}} + \beta \cdot s_{\text{ocr}} + \gamma \cdot s_{\text{caption}}}
+{\alpha + \beta + \gamma}
+\]
+
+where the current implementation uses `alpha = 0.5`, `beta = 0.3`, and `gamma = 0.2` when the corresponding evidence is present. This weighting deliberately keeps the visual signal dominant while still allowing OCR-derived and caption-derived evidence to contribute when useful. The dense score is then refined using lexical overlap, specification-aware matching, and exact-field boosts for high-value structured fields such as `maker`, `part_number`, and `model_id`.
+
+In simplified form, the final ranking stage can be described as:
+
+\[
+\text{final\_score} =
+0.45 \cdot \text{dense\_score}
++ 0.20 \cdot \text{lexical\_score}
++ 0.15 \cdot \text{spec\_match}
++ 0.20 \cdot \text{exact\_field\_boost}
+\]
+
+with additional bonus adjustments when a direct lexical hit or an exact field match is detected. In effect, global semantic similarity determines the initial candidate neighbourhood, while exact identifier evidence can override purely visual closeness when necessary. Candidates that fail a minimum score threshold without lexical or exact-field support are removed before the final Top-K ranking is returned.
+
+### 4.5.2 Simplified Search Pseudocode
+
+```text
+Algorithm 1. Hybrid multimodal retrieval and scoring pipeline
+Input: query_image?, query_text?, top_k
+
+1. If query_image exists:
+   a. preprocess image -> image embedding, optional OCR text, optional caption
+   b. search image collection
+   c. if OCR text exists, search text collection
+   d. if caption exists, search caption collection
+
+2. If query_text exists:
+   a. encode query text with BGE-M3
+   b. search model-level text collection
+
+3. Merge candidates by model_id
+
+4. For each candidate:
+   a. compute dense fusion score from image/OCR/caption similarities
+   b. compute lexical score from query text and model text fields
+   c. compute exact-field boost and specification-match score
+   d. combine signals into final_score
+   e. discard low-confidence candidates that fail the minimum threshold
+
+5. Sort remaining candidates by final_score
+
+6. Optionally rerank the top segment with Qwen3-VL reranker
+
+7. Return Top-K results with evidence fields and representative images
+```
 
 [Insert Figure 4.3: Example of hybrid score decomposition and ranked output]  
-*(작성 가이드: score breakdown 또는 search result card screenshot 삽입)*
+*Figure note:* This figure should show how a candidate with a stronger exact part-number or maker match can be promoted above a visually similar but lexically weaker alternative. A result-card screenshot or score-breakdown view is appropriate.
 
-## 4.6 Technical Challenges and Mitigations
+## 4.6 Technical Challenges and Engineering Mitigations
 
 ### 4.6.1 Local Compute Constraints
 
 **Challenge:** Heavy multimodal models are expensive to run during iterative development, especially in non-CUDA local environments. OCR, image embedding, and reranking can all become bottlenecks.
 
-**Mitigation:** The system was designed so that expensive components could be toggled or isolated. OCR can be disabled, reranking can be made optional, and metadata preview can use different backends depending on the runtime. This allowed UI and API development to continue even when full heavy-path evaluation was impractical on every run.
+**Mitigation:** The system was designed so that expensive components could be toggled or isolated. OCR can be disabled, reranking can be made optional, and metadata preview can use different backends depending on the runtime. This modularity allowed development and debugging to continue even when running the full heavy path on every iteration was impractical.
 
 ### 4.6.2 Balancing Speed and Accuracy
 
 **Challenge:** A listing assistant must remain responsive enough for interactive use. In practice, chaining OCR, image embedding, captioning, and reranking for every request can produce unacceptable latency.
 
-**Mitigation:** The implementation supports multiple runtime configurations. This allowed the project to compare heavier OCR-rich paths with faster vision-dominant paths and make a practical recommendation based on both quality and latency evidence rather than accuracy alone.
+**Mitigation:** The implementation supports multiple runtime configurations. This made it possible to compare heavier OCR-rich paths with faster vision-dominant paths and derive an operating recommendation from measured quality-latency trade-offs rather than from accuracy alone. Chapter 5 shows that the practical default should remain close to the faster C3-style operating mode unless stronger evidence recovery is explicitly needed.
 
 ### 4.6.3 Viewpoint Variance and Incomplete Visual Evidence
 
@@ -147,8 +227,8 @@ The implementation also includes ranking controls such as lexical matching impro
 
 **Challenge:** In a real listing workflow, the same part may be uploaded again with better images or richer metadata. Treating every repeat as a brand-new item would fragment the index and reduce consistency.
 
-**Mitigation:** The implementation uses duplicate-aware ingestion. If a likely match to an existing part is detected, the system can reuse the existing model identity and append new images or merge richer metadata instead of discarding it.
+**Mitigation:** The implementation uses duplicate-aware ingestion. During preview, the backend can return a duplicate candidate based on the drafted identifiers, and during confirm the user can decide whether to merge the new upload into an existing `model_id` or keep it separate. This preserves index consistency while still allowing human review of ambiguous cases.
 
 ## 4.7 Implementation Status Summary
 
-At the prototype stage, the implemented system supports an end-to-end workflow that links search, indexing, catalog retrieval, and agent-assisted evidence expansion. It is not yet a production-grade marketplace platform, but it is sufficiently complete to support controlled experiments, user-facing demonstration, and critical evaluation of the main architectural decisions.
+At the prototype stage, the implemented system supports an end-to-end workflow linking multimodal search, duplicate-aware indexing, catalog retrieval, and agent-assisted evidence expansion. It is not yet a production-grade marketplace platform, but it is sufficiently complete to support controlled experiments, user-facing demonstration, and critical evaluation of the main architectural decisions reported in this project.

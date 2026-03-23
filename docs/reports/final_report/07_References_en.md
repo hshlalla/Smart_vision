@@ -1,8 +1,8 @@
 # 7. References
 
-[1] Bai, J., Bai, S., Yang, S., et al. (2023) 'Qwen-VL: A Frontier Large Vision-Language Model with Versatile Abilities', *arXiv preprint arXiv:2308.12966*.
+[1] Bai, J., Bai, S., Yang, S., et al. (2023) 'Qwen-VL: A Versatile Vision-Language Model for Understanding, Localization, Text Reading, and Beyond', *arXiv preprint arXiv:2308.12966*.
 
-[2] Chen, J., Xiao, S., Zhang, P., et al. (2024) 'BGE M3-Embedding: Multi-Lingual, Multi-Functionality, Multi-Granularity Text Embeddings Through Self-Knowledge Distillation', *arXiv preprint arXiv:2402.03216*.
+[2] Chen, J., Xiao, S., Zhang, P., et al. (2024) 'M3-Embedding: Multi-Linguality, Multi-Functionality, Multi-Granularity Text Embeddings Through Self-Knowledge Distillation', *arXiv preprint arXiv:2402.03216*.
 
 [3] Vasu, B., Hu, B., Dong, B., Collins, R. and Hoogs, A. (2021) 'Explainable, interactive content-based image retrieval', *Applied AI Letters*, 2(4), e41. Available at: https://doi.org/10.1002/ail2.41
 
@@ -20,6 +20,32 @@
 
 [10] Grid Dynamics (2021) *Visual search: How to find manufacturing parts in a cinch*. Available at: https://www.griddynamics.com/blog/visual-search-manufacturing-parts (Accessed: 23 March 2026).
 
-[11] Milvus Documentation (n.d.) *What is Milvus?* Available at: https://milvus.io/docs/v2.3.x/overview.md (Accessed: 23 March 2026).
+[11] Milvus Documentation (n.d.) *What is Milvus?* Available at: https://milvus.io/docs/overview.md (Accessed: 23 March 2026).
 
 [12] eBay Inc. (2017) *An Easier Way to Search eBay: Computer Vision with Find It On eBay and Image Search Is Now Live*. Available at: https://www.ebayinc.com/stories/news/an-easier-way-to-search-ebay-computer-vision-with-find-it-on-ebay-and-image-search-is-now-live/ (Accessed: 23 March 2026).
+
+[13] Redmon, J., Divvala, S., Girshick, R. and Farhadi, A. (2016) 'You Only Look Once: Unified, Real-Time Object Detection', *Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)*, pp. 779-788.
+
+[14] Johnson, J., Douze, M. and Jégou, H. (2019) 'Billion-scale similarity search with GPUs', *IEEE Transactions on Big Data*, 7(3), pp. 535-547.
+
+[15] Wang, J., Yi, X., Guo, R., et al. (2021) 'Milvus: A Purpose-Built Vector Data Management System', *Proceedings of the 2021 International Conference on Management of Data (SIGMOD '21)*. Available at: https://doi.org/10.1145/3448016.3457550
+
+[16] Du, Y., Li, C., Guo, R., et al. (2020) 'PP-OCR: A Practical Ultra Lightweight OCR System', *arXiv preprint arXiv:2009.09941*.
+
+[17] Liao, M., Wan, Z., Yao, C., Chen, K. and Bai, X. (2020) 'Real-time Scene Text Detection with Differentiable Binarization', *Proceedings of the AAAI Conference on Artificial Intelligence*, 34(07), pp. 11474-11481.
+
+[18] Shi, B., Bai, X. and Yao, C. (2017) 'An End-to-End Trainable Neural Network for Image-Based Sequence Recognition and Its Application to Scene Text Recognition', *IEEE Transactions on Pattern Analysis and Machine Intelligence*, 39(11), pp. 2298-2304.
+
+[19] Liu, H., Li, C., Wu, Q. and Lee, Y. J. (2023) 'Visual Instruction Tuning', *Advances in Neural Information Processing Systems (NeurIPS)*, 36.
+
+[20] Duan, J., Yu, S., Tan, H., Zhu, H. and Tan, C. (2022) 'A Survey of Embodied AI: From Simulators to Research Tasks', *IEEE Transactions on Emerging Topics in Computational Intelligence*, 6(2), pp. 230-244.
+
+[21] Ahn, M., Brohan, A., Brown, N., et al. (2022) 'Do As I Can, Not As I Say: Grounding Language in Robotic Affordances', *Proceedings of The 6th Conference on Robot Learning (CoRL)*, PMLR 205, pp. 287-318.
+
+[22] Ji, Z., Lee, N., Frieske, R., et al. (2023) 'Survey of Hallucination in Natural Language Generation', *ACM Computing Surveys*, 55(12), Article 248.
+
+[23] Lewis, P., Perez, E., Piktus, A., et al. (2020) 'Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks', *Advances in Neural Information Processing Systems (NeurIPS)*, 33, pp. 9459-9474.
+
+[24] Wu, X., Xiao, L., Sun, Y., Zhang, J., Ma, T. and He, L. (2022) 'A Survey of Human-in-the-loop for Machine Learning', *Future Generation Computer Systems*, 135, pp. 364-381.
+
+[25] Shneiderman, B. (2020) 'Human-Centered Artificial Intelligence: Reliable, Safe & Trustworthy', *International Journal of Human-Computer Interaction*, 36(6), pp. 495-504.

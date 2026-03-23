@@ -1,21 +1,47 @@
-# 6. Conclusion
+# 6. Conclusion and Future Work
 
-## 6.1 Summary of Contributions
+이 장은 프로젝트의 주요 성과를 요약하고, 아키텍처적·기술적 기여를 정리하며, 현재 prototype과 future productisation 또는 research work 사이의 경계를 규정하는 한계를 논의한다.
 
-본 프로젝트는 중고 플랫폼의 부품 식별 문제를 위해, OCR, multimodal embeddings, vector search, catalog retrieval, agent orchestration을 하나의 실용적 workflow로 통합한 시스템 수준의 기여를 제시했다. 핵심은 새로운 foundation model을 제안한 것이 아니라, 여러 AI 구성요소를 실제 문제 맥락에 맞게 오케스트레이션한 데 있다.
+## 6.1 Project Summary
 
-이 보고서는 중고 부품 식별을 retrieval-first, human-in-the-loop 문제로 보는 것이 적절하다고 주장했다. 이는 도메인의 open-world, fine-grained, text-sensitive 특성과, 사용자들이 transparency와 control을 원한다는 점을 모두 반영한 framing이다. 따라서 설계는 Top-K retrieval, evidence-backed result, graceful fallback, listing-oriented structured output을 강조한다.
+본 프로젝트는 중고 플랫폼에서 산업용 및 전자 부품을 식별하고 listing하는 과정의 마찰을 줄이는 것을 목표로 했다. “Orchestrating AI models” 템플릿에 따라, 시스템은 비전문 판매자가 사용자 업로드 사진과 관련 evidence를 바탕으로 listing-relevant metadata를 추론할 수 있도록 돕는 방향으로 설계되었다.
 
-구현 결과는 이러한 설계가 web, API, model 계층에 걸친 working prototype으로 실현될 수 있음을 보여준다. 또한 최근 validation 작업을 통해 writeback safety, regression coverage, latency instrumentation, unified dataset preparation 측면의 개선도 이루어졌다. 최종 실험 보고서와 로컬 추가 검증을 함께 보면, 보고서 기준 주 비교군에서는 `C4`가 가장 강한 benchmark 결과를 보였고, 실제 운영 권고 구성은 `C3 (OCR off, reranker off)`로 정리된다.
+평가 과정에서 중요한 전환이 발생했다. 초기에는 OCR-heavy retrieval pipeline이 explicit identifier를 더 잘 회수해 가장 강한 결과를 낼 것이라고 가정할 수 있었다. 그러나 empirical benchmark 결과는 산업 환경에서 전통적 OCR이 severe noise와 substantial latency를 동시에 유발한다는 점을 보여주었다. 그 결과 프로젝트는 Qwen3-VL을 이용한 layout-aware image understanding과 BGE-M3를 이용한 robust text representation을 결합한 vision-dominant hybrid retrieval architecture로 중심을 옮기게 되었다. 이 orchestration은 human-in-the-loop workflow 안에 배치되어, 시스템이 fully autonomous classifier가 아니라 evidence-backed decision-support assistant로 기능하도록 했다.
 
-## 6.2 Limitations
+## 6.2 Key Contributions
 
-반면 한계도 분명하다. OCR은 현실적인 노이즈에 여전히 취약하며, 전체 review-and-writeback workflow는 아직 production-grade 수준으로 완성된 것은 아니다. 또한 현재 실험 결과는 prototype과 local evaluation 환경에서 얻어진 것이므로, 더 넓은 환경과 사용자 집단에 대한 일반화에는 추가 검증이 필요하다. 이 한계는 프로젝트의 가치를 부정하는 것이 아니라, 현재 근거가 어디까지 도달했는지를 명확히 보여주는 경계선이다.
+본 프로젝트의 주요 기여는 다음과 같이 정리할 수 있다.
 
-## 6.3 Future Work
+1. **OCR 한계에 대한 empirical evidence 제시**  
+   OCR을 default first-stage retrieval signal로 사용하는 것이 noisy industrial imagery에서는 retrieval quality를 떨어뜨리고 latency를 증가시킬 수 있다는 구체적 실험 근거를 제시했다.
 
-향후 과제로는 evaluation automation 완성, audited review workflow 추가, selective OCR verification policy 고도화, hard case에 대한 region focus 실험, user-centred validation 강화 등이 있다. 또한 metadata-only draft registration, later image attachment, stronger catalog-document integration, Linux/GPU deployment stabilisation도 의미 있는 확장 방향이다.
+2. **Retrieval-first vision-language orchestration pipeline 구현**  
+   Qwen3-VL 기반 image understanding, BGE-M3 text retrieval, metadata-aware scoring, hybrid ranking을 하나의 operational retrieval workflow로 통합했다. main benchmark에서 vision-dominant configuration은 약 `91%` Accuracy@1을 기록했다.
+
+3. **실용적인 human-in-the-loop prototype 제공**  
+   `preview-confirm` workflow를 중심으로 하는 working end-to-end prototype을 구현했다. 이는 transparency, editability, evidence visibility에 대한 사용자 요구를 직접 반영하며, 시스템을 black-box prediction이 아닌 AI-assisted user verification 방향으로 전환한다.
+
+4. **단일 모델 데모를 넘어서는 system-level contribution**  
+   search, indexing, catalog retrieval, agent-assisted evidence expansion을 하나의 일관된 workflow로 통합했다. 따라서 핵심 기여는 새로운 foundation model 제안이 아니라, 여러 AI 구성요소를 실제 문제 맥락에 맞게 실용적으로 orchestrate한 데 있다.
+
+## 6.3 Limitations and Future Work
+
+retrieval-first architecture의 타당성은 확인되었지만, 여전히 한계가 남아 있으며 이는 다음 단계의 과제를 규정한다.
+
+- **Workflow enhancements**  
+  현재 indexing path는 이미지 업로드에서 시작한다. 향후에는 **metadata-only draft registration**을 지원해 사용자가 known metadata로 listing을 시작하고 나중에 이미지를 붙일 수 있게 하는 것이 유용하다. 또한 현재의 `preview-confirm` sequence는 revision history와 rollback support를 포함하는 fully **audited review-and-writeback workflow**로 확장될 수 있다.
+
+- **Selective OCR and region-focused refinement**  
+  평가 결과는 OCR을 indiscriminately 적용해서는 안 된다는 점을 보여준다. 향후 버전에서는 필요한 경우에만 OCR을 호출하는 **selective verification policy**가 필요하다. label-region detection, rotation correction, multi-view evidence aggregation 같은 region-focused processing도 difficult case를 더 잘 다룰 수 있게 해 줄 것이다.
+
+- **Scaling and deployment**  
+  더 넓은 운영을 위해서는 local hardware constraint를 줄이고 heavier multimodal path의 재현성을 높일 수 있는 stable Linux/GPU environment로의 이전이 필요하다.
+
+- **Broader validation**  
+  현재 실험은 유용한 근거를 제공하지만, 앞으로는 novice seller와 experienced seller를 모두 포함하는 larger-scale user study, stronger hard-case benchmark, broader deployment-oriented validation이 필요하다.
 
 ## 6.4 Concluding Remarks
 
-따라서 본 시스템을 가장 적절하게 표현하는 말은 **`retrieval-first, human-in-the-loop identification assistant`**이다. 이것이 현재 증거 수준과 가장 잘 맞는 표현이며, 동시에 기술적으로 충분히 의미 있는 시스템 통합 프로젝트의 성과라고 볼 수 있다.
+fine-grained secondhand part identification은 일반 소비재 이미지 검색과 근본적으로 다른 문제다. 이 프로젝트는 AI 구성요소를 단순히 많이 쌓는다고 해서 자동으로 더 나은 시스템이 되는 것은 아니라는 점을 보여준다. 실제로 더 효과적인 설계는 visual retrieval, OCR, reranking, latency, user trust 사이의 trade-off를 비판적으로 검증하는 과정에서 도출되었다.
+
+따라서 최종 결과를 가장 잘 설명하는 표현은 **`retrieval-first, human-in-the-loop identification assistant`**이다. 이 표현은 구현된 workflow와 현재 확보된 evidence 수준을 모두 가장 잘 반영한다. 본 프로젝트의 가치는 fully autonomous identification을 과장해서 주장하는 데 있지 않고, state-of-the-art AI component를 어려운 실제 도메인에 맞는 practical, evidence-backed listing assistant로 orchestrate할 수 있음을 보여준 데 있다.
