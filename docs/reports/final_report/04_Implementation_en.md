@@ -18,6 +18,8 @@ The project was implemented as a monorepo so that the web application, API servi
 [Insert Figure 4.1: Repository or module overview]  
 *(작성 가이드: repository structure 또는 module relationship diagram 삽입)*
 
+**Figure 4.1. Implementation-level module overview showing how `apps/web`, `apps/api`, and `packages/model` interact within the integrated prototype.**
+
 This implementation approach was important because it allowed the multimodal retrieval logic to be tested independently from the web layer, while still supporting an integrated end-to-end system.
 
 ## 4.2 Vector Database Setup (Milvus)
@@ -89,7 +91,7 @@ self.preprocessing = PreprocessingPipeline(
 )
 ```
 
-*Figure note:* This snippet summarises the multimodal preprocessing stack. The actual implementation also includes collection setup, metadata normalisation, duplicate-aware ingestion, optional reranking, and task management.
+**Figure 4.2. Simplified orchestration setup for the multimodal preprocessing stack, including Qwen3-VL image encoding, BGE-M3 text encoding, conditional OCR, and caption-aware preprocessing.**
 
 ## 4.4 Asynchronous Indexing and the Preview-Confirm Backend Architecture
 
@@ -133,7 +135,7 @@ self._executor.submit(
 return {"status": "queued", "model_id": model_id, "task_id": task_id}
 ```
 
-*Figure note:* This snippet shows the core confirm-stage queueing logic. The API returns immediately with a `task_id`, while the heavier indexing job continues in the background and the frontend tracks progress by polling the task endpoint.
+**Figure 4.3. Confirm-stage asynchronous queueing logic, where the API returns a `task_id` immediately and the frontend tracks indexing progress through task polling.**
 
 ## 4.5 Search Implementation and Hybrid Retrieval Routing
 
@@ -200,8 +202,8 @@ Input: query_image?, query_text?, top_k
 7. Return Top-K results with evidence fields and representative images
 ```
 
-[Insert Figure 4.3: Example of hybrid score decomposition and ranked output]  
-*Figure note:* This figure should show how a candidate with a stronger exact part-number or maker match can be promoted above a visually similar but lexically weaker alternative. A result-card screenshot or score-breakdown view is appropriate.
+[Insert Figure 4.4: Example of hybrid score decomposition and ranked output]  
+**Figure 4.4. Example of hybrid score decomposition showing how exact identifier evidence can promote the correct candidate above visually similar but lexically weaker alternatives.**
 
 ## 4.6 Technical Challenges and Engineering Mitigations
 

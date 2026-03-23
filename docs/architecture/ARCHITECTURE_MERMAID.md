@@ -134,3 +134,36 @@ sequenceDiagram
   API-->>Web: 200 OK
   Web-->>User: 작업 상태 polling 시작
 ```
+
+## 5) Catalog + Agent Orchestration Path
+
+```mermaid
+flowchart TD
+  U["User question or search intent"] --> WEB["apps/web Agent or Catalog UI"]
+  WEB --> API["apps/api"]
+
+  API --> AG["Agent API"]
+  API --> CAT["Catalog API"]
+  API --> HY["Hybrid Search API"]
+
+  AG --> DECIDE{"Need more evidence?"}
+
+  DECIDE -->|"Inventory lookup"| HY
+  DECIDE -->|"Internal document lookup"| CAT
+  DECIDE -->|"Open-world or price context"| EXT["External web search optional"]
+
+  HY --> MILVUS[("Milvus model and attrs collections")]
+  CAT --> PDFIDX["Catalog PDF index and chunk store"]
+
+  MILVUS --> HYRES["Identified item metadata and images"]
+  PDFIDX --> CATRES["Catalog chunks with source and page"]
+  EXT --> WEBRES["External links and summaries"]
+
+  HYRES --> AGG["Agent response composer"]
+  CATRES --> AGG
+  WEBRES --> AGG
+
+  AGG --> APIRESP["Unified response body"]
+  APIRESP --> WEB
+  WEB --> OUT["Answer text, item card, catalog evidence, external sources"]
+```

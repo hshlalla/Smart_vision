@@ -18,6 +18,8 @@
 [Insert Figure 4.1: Repository or module overview]  
 *(작성 가이드: repository structure 또는 module relationship diagram 삽입)*
 
+**Figure 4.1. `apps/web`, `apps/api`, `packages/model`이 통합 prototype 안에서 어떻게 연결되는지를 보여주는 implementation-level module overview.**
+
 이 구현 방식의 장점은 multimodal retrieval logic을 web layer와 독립적으로 테스트할 수 있으면서도, 동시에 end-to-end 통합 시스템으로 작동하게 할 수 있다는 점이다.
 
 ## 4.2 Vector Database Setup (Milvus)
@@ -94,7 +96,7 @@ self.preprocessing = PreprocessingPipeline(
 )
 ```
 
-*Figure note:* 이 스니펫은 multimodal preprocessing stack의 핵심 구성을 요약한 것이다. 실제 구현에는 collection setup, metadata normalisation, duplicate-aware ingestion, optional reranking, task management가 추가로 포함된다.
+**Figure 4.2. Qwen3-VL image encoding, BGE-M3 text encoding, conditional OCR, caption-aware preprocessing을 포함하는 multimodal preprocessing stack의 단순화된 orchestration setup.**
 
 ## 4.4 Asynchronous Indexing and the Preview-Confirm Backend Architecture
 
@@ -138,7 +140,7 @@ self._executor.submit(
 return {"status": "queued", "model_id": model_id, "task_id": task_id}
 ```
 
-*Figure note:* 이 스니펫은 confirm-stage queueing logic을 보여준다. API는 즉시 `task_id`를 반환하고, 무거운 indexing job은 background에서 계속 실행되며 frontend는 task endpoint polling으로 진행 상태를 확인한다.
+**Figure 4.3. API가 즉시 `task_id`를 반환하고 frontend가 task polling으로 진행 상태를 추적하는 confirm-stage asynchronous queueing logic.**
 
 ## 4.5 Search Implementation and Hybrid Retrieval Routing
 
@@ -208,8 +210,8 @@ Algorithm 1. Hybrid multimodal retrieval and scoring pipeline
 7. evidence field와 representative image를 포함한 Top-K 결과 반환
 ```
 
-[Insert Figure 4.3: Example of hybrid score decomposition and ranked output]  
-*Figure note:* 이 그림은 exact part-number 또는 maker match가 강한 후보가, 시각적으로는 비슷하지만 lexical evidence가 약한 후보보다 어떻게 상위로 올라오는지를 보여주는 것이 좋다. result card screenshot 또는 score-breakdown view가 적절하다.
+[Insert Figure 4.4: Example of hybrid score decomposition and ranked output]  
+**Figure 4.4. exact identifier evidence가 시각적으로 유사하지만 lexical evidence가 약한 후보를 넘어 올바른 후보를 상위로 끌어올리는 hybrid score decomposition 예시.**
 
 ## 4.6 Technical Challenges and Engineering Mitigations
 

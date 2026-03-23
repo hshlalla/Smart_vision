@@ -18,6 +18,8 @@ To maintain modularity and enable iterative experimentation, the system is organ
 [Insert Figure 3.1: End-to-End System Architecture Pipeline]  
 *(작성 가이드: `docs/architecture/ARCHITECTURE_MERMAID.md`의 “1) 전체 Pipeline (End-to-End)” 다이어그램 캡처본 삽입)*
 
+**Figure 3.1. End-to-end system architecture linking the web client, FastAPI backend, model orchestration layer, and Milvus-based retrieval storage.**
+
 
 This architecture directly supports the “Orchestrating AI models to achieve a goal” template. Heavy multimodal processing is isolated in the model package, while the frontend and API layers communicate with it through explicit JSON or multipart interfaces.
 
@@ -45,6 +47,8 @@ The final orchestrated pipeline is centred on the following components:
 [Insert Figure 3.2: AI Orchestration and Multimodal Fusion Pipeline]  
 *(작성 가이드: `docs/architecture/ARCHITECTURE_MERMAID.md`의 “3) Model 상세” 다이어그램 캡처본 삽입)*
 
+**Figure 3.2. Multimodal orchestration pipeline showing how image embeddings, text evidence, caption signals, and ranking logic are combined into a retrieval-first workflow.**
+
 By combining these signals rather than relying on a single model output, the system adopts a retrieval-first design that is more appropriate for open-world part identification than a closed-set classifier.
 
 ## 3.3 Human-in-the-Loop (HITL) Workflow
@@ -64,6 +68,8 @@ This is implemented through a preview-confirm workflow:
 
 [Insert Figure 3.3: User Interface demonstrating the Human-in-the-Loop preview and verification workflow]  
 *(작성 가이드: 업로드 화면과 preview/결과 확인 화면 스크린샷 2장 삽입)*
+
+**Figure 3.3. Human-in-the-loop indexing workflow, showing metadata preview, duplicate review, and user confirmation before final write-back.**
 
 This design serves two purposes. First, it reduces the risk of blind write-back from uncertain AI output. Second, it keeps the indexed dataset cleaner by requiring a final human confirmation step before persistence.
 
@@ -93,7 +99,9 @@ The core retrieval pipeline is complemented by two extended service paths:
   The agent layer can combine hybrid search, catalog search, and web search to provide broader evidence when simple retrieval alone is not sufficient.
 
 [Insert Figure 3.4: Agent and catalog orchestration path]  
-*(작성 가이드: catalog/agent 관련 구조도 또는 UI 스크린샷 삽입)*
+*(작성 가이드: `docs/architecture/ARCHITECTURE_MERMAID.md`의 “5) Catalog + Agent Orchestration Path” 다이어그램 캡처본 또는 대응 UI 스크린샷 삽입)*
+
+**Figure 3.4. Extended orchestration path for catalog retrieval and agent-assisted evidence expansion beyond the core hybrid search workflow.**
 
 These components are not the sole focus of the retrieval benchmark, but they are part of the overall design because they extend the system from a narrow retrieval engine into a more practical listing-assistance workflow.
 

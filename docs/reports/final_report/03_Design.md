@@ -18,6 +18,8 @@
 [Insert Figure 3.1: End-to-End System Architecture Pipeline]  
 *(작성 가이드: `docs/architecture/ARCHITECTURE_MERMAID.md`의 “1) 전체 Pipeline (End-to-End)” 다이어그램 캡처본 삽입)*
 
+**Figure 3.1. 웹 클라이언트, FastAPI 백엔드, 모델 오케스트레이션 계층, Milvus 기반 retrieval 저장소를 연결하는 end-to-end 시스템 구조.**
+
 이 구조는 “Orchestrating AI models to achieve a goal” 템플릿을 직접적으로 반영한다. 무거운 multimodal processing은 model package에 격리되고, frontend와 API는 명시적인 JSON 또는 multipart interface를 통해 이를 호출한다.
 
 ## 3.2 AI Orchestration Pipeline
@@ -44,6 +46,8 @@
 [Insert Figure 3.2: AI Orchestration and Multimodal Fusion Pipeline]  
 *(작성 가이드: `docs/architecture/ARCHITECTURE_MERMAID.md`의 “3) Model 상세” 다이어그램 캡처본 삽입)*
 
+**Figure 3.2. image embedding, text evidence, caption signal, ranking logic가 결합되어 retrieval-first workflow를 구성하는 multimodal orchestration pipeline.**
+
 이처럼 여러 신호를 조합하는 방식은 open-world part identification에서 closed-set classifier보다 더 적절한 retrieval-first 설계를 뒷받침한다.
 
 ## 3.3 Human-in-the-Loop (HITL) Workflow
@@ -63,6 +67,8 @@
 
 [Insert Figure 3.3: User Interface demonstrating the Human-in-the-Loop preview and verification workflow]  
 *(작성 가이드: 업로드 화면과 preview/결과 확인 화면 스크린샷 2장 삽입)*
+
+**Figure 3.3. metadata preview, duplicate review, user confirmation을 포함하는 human-in-the-loop 인덱싱 워크플로우.**
 
 이 설계는 두 가지 역할을 한다. 첫째, 불확실한 AI 출력이 blind write-back 되는 위험을 줄인다. 둘째, 최종 human confirmation을 요구함으로써 indexed dataset의 품질을 더 안정적으로 유지한다.
 
@@ -92,7 +98,9 @@ query time에는 multimodal path와 lightweight path를 모두 지원한다.
   agent layer는 hybrid search, catalog search, web search를 결합해 단순 retrieval만으로는 부족한 경우 더 넓은 evidence를 제공한다.
 
 [Insert Figure 3.4: Agent and catalog orchestration path]  
-*(작성 가이드: catalog/agent 관련 구조도 또는 UI 스크린샷 삽입)*
+*(작성 가이드: `docs/architecture/ARCHITECTURE_MERMAID.md`의 “5) Catalog + Agent Orchestration Path” 다이어그램 캡처본 또는 대응 UI 스크린샷 삽입)*
+
+**Figure 3.4. core hybrid search를 넘어 catalog retrieval과 agent-assisted evidence expansion까지 연결되는 확장 오케스트레이션 경로.**
 
 이 구성요소들은 retrieval benchmark의 유일한 초점은 아니지만, 시스템을 좁은 retrieval engine이 아니라 더 실용적인 listing-assistance workflow로 확장하는 역할을 한다.
 
